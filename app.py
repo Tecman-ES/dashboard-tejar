@@ -167,6 +167,26 @@ def get_delta_html(real, target):
     else:
         return "<div class='kpi-delta delta-neutral'>▬ Objetivo exacto</div>"
 
+# --- NUEVA FUNCIÓN PARA TARJETAS CON DATO DIARIO Y MENSUAL ---
+def get_kpi_card_html(title, icon, val_hoy, val_mes, unit, delta_html, css_class=""):
+    return f"""
+    <div class="kpi-card {css_class}">
+        <div class="kpi-icon">{icon}</div>
+        <div class="kpi-title">{title}</div>
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
+            <div style="text-align: left;">
+                <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Día (Hoy)</div>
+                <div class="kpi-value">{format_kpi_number(val_hoy)}<span class="kpi-unit"> {unit}</span></div>
+            </div>
+            <div style="text-align: right;">
+                <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Mes (Acum)</div>
+                <div style="font-size: 1.4rem; font-weight: 700; color: #cbd5e1;">{format_kpi_number(val_mes)}<span class="kpi-unit"> {unit}</span></div>
+            </div>
+        </div>
+        {delta_html}
+    </div>
+    """
+
 @st.cache_data
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -263,7 +283,15 @@ def load_data(uploaded_file):
             
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
         except: pass
-    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            
+    # DATOS DEMO (Actualizados con datos mensuales de prueba)
+    df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780], "Acum. Mensual": [10362240, 0, 9152660, 173220, 3579480, 2918540, 0, 2281940]})
+    df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
+    df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Acidez": [2.92, 11.15, 7.81], "Acum. Mensual": [25500, 9800, 12400]})
+    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298]})
+    df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena"], "OGS_Procesado": [570400, 110000], "Salida_Orujillo": [443740, 101700], "Aceite_Prod": [31800, 8300], "Acum. Mensual": [450000, 125000]})
+    df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229], "Acum. Mensual": [2635700, 6224221, 1389457]})
+    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
 def filter_dataframe(df, column_name, planta_seleccionada):
     if df.empty or planta_seleccionada == "Todas" or column_name not in df.columns:
@@ -346,56 +374,33 @@ if check_password():
             with col_resumen:
                 st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
                 
-                # Cálculos de totales y Deltas (Desviaciones)
+                # Cálculos de totales y Deltas diarios
                 total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
                 total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
                 total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
                 total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
+                
+                # Cálculos de acumulados mensuales
+                total_orujo_mes = df_aport['Acum. Mensual'].sum() if not df_aport.empty and 'Acum. Mensual' in df_aport.columns else 0
+                total_elec_mes = df_elec['Acum. Mensual'].sum() if not df_elec.empty and 'Acum. Mensual' in df_elec.columns else 0
+                total_aceite_cent_mes = df_cent['Acum. Mensual'].sum() if not df_cent.empty and 'Acum. Mensual' in df_cent.columns else 0
+                total_aceite_ext_mes = df_ext['Acum. Mensual'].sum() if not df_ext.empty and 'Acum. Mensual' in df_ext.columns else 0
                 
                 # Objetivos
                 target_elec = df_obj_filtered[df_obj_filtered['Area']=='Electricidad']['Objetivo_Diario'].sum()
                 target_cent = df_obj_filtered[df_obj_filtered['Area']=='Centrifugacion']['Objetivo_Diario'].sum()
                 target_ext = df_obj_filtered[df_obj_filtered['Area']=='Extraccion']['Objetivo_Diario'].sum()
                 
-                # Tarjetas KPI con CSS + Deltas HTML
+                # Tarjetas KPI con CSS + Deltas HTML + Dato Mensual
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    st.markdown(f"""
-                    <div class="kpi-card">
-                        <div class="kpi-icon">📦</div>
-                        <div class="kpi-title">Orujo Recibido</div>
-                        <div class="kpi-value">{format_kpi_number(total_orujo)}<span class="kpi-unit"> kg</span></div>
-                        <div class="kpi-delta delta-neutral">Materia prima de entrada</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, total_orujo_mes, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
                 with c2:
-                    st.markdown(f"""
-                    <div class="kpi-card blue">
-                        <div class="kpi-icon">⚡</div>
-                        <div class="kpi-title">Electricidad</div>
-                        <div class="kpi-value">{format_kpi_number(total_elec)}<span class="kpi-unit"> kWh</span></div>
-                        {get_delta_html(total_elec, target_elec)}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, total_elec_mes, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
                 with c3:
-                    st.markdown(f"""
-                    <div class="kpi-card yellow">
-                        <div class="kpi-icon">💧</div>
-                        <div class="kpi-title">Aceite Centrif.</div>
-                        <div class="kpi-value">{format_kpi_number(total_aceite_cent)}<span class="kpi-unit"> kg</span></div>
-                        {get_delta_html(total_aceite_cent, target_cent)}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, total_aceite_cent_mes, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
                 with c4:
-                    # ICONO ALAMBIQUE/MATRAZ (⚗️)
-                    st.markdown(f"""
-                    <div class="kpi-card orange">
-                        <div class="kpi-icon">⚗️</div>
-                        <div class="kpi-title">Aceite Extrac.</div>
-                        <div class="kpi-value">{format_kpi_number(total_aceite_ext)}<span class="kpi-unit"> kg</span></div>
-                        {get_delta_html(total_aceite_ext, target_ext)}
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, total_aceite_ext_mes, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
                 
                 st.write("<br>", unsafe_allow_html=True)
                 st.write("### 🤖 Análisis Operativo IA")
