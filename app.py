@@ -83,18 +83,27 @@ def extract_table(df_raw, marker):
         if df_sub.empty: 
             return pd.DataFrame()
         
-        # 5. Asignar y limpiar cabeceras
-        headers = df_sub.iloc[0].astype(str).str.strip()
-        df_sub.columns = headers
+        # Resetear índice para poder acceder a la fila 0 sin fallos
+        df_sub = df_sub.reset_index(drop=True)
+        
+        # 5. Filtrar columnas fantasma ANTES de asignar cabeceras (Evita el bloqueo)
+        headers = df_sub.iloc[0]
+        valid_cols = headers.notna() & (headers.astype(str).str.strip() != '') & (~headers.astype(str).str.lower().isin(['nan', 'none', '<na>']))
+        df_sub = df_sub.loc[:, valid_cols]
+        
+        # 6. Asignar y limpiar cabeceras
+        df_sub.columns = df_sub.iloc[0].astype(str).str.strip()
         df_sub = df_sub[1:]
         
-        # 6. Eliminar columnas vacías fantasma de Excel ('nan')
-        df_sub = df_sub.loc[:, ~df_sub.columns.isin(['nan', 'None', '', '<NA>'])]
+        # 7. Eliminar columnas duplicadas (por si acaso el Excel se corrompe)
+        df_sub = df_sub.loc[:, ~df_sub.columns.duplicated()]
         
-        # 7. Limpiar números (quitar comas de Excel como texto) y convertir a numérico
+        # 8. Limpiar números y convertir a numérico
         for col in df_sub.columns:
             if df_sub[col].dtype == object:
+                # Limpiar texto o caracteres invisibles
                 df_sub[col] = df_sub[col].astype(str).str.replace(',', '', regex=False)
+                df_sub[col] = df_sub[col].replace(['nan', 'NaN', 'None', ''], None)
             df_sub[col] = pd.to_numeric(df_sub[col], errors='ignore')
             
         return df_sub.dropna(how='all').reset_index(drop=True)
@@ -106,7 +115,8 @@ def load_data(uploaded_file):
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.csv'):
-                df_raw = pd.read_csv(uploaded_file, header=None)
+                # AÑADIDO: Detectar automáticamente punto y coma (;) de los Excel en España
+                df_raw = pd.read_csv(uploaded_file, header=None, sep=None, engine='python')
             else:
                 df_raw = pd.read_excel(uploaded_file, header=None)
             
