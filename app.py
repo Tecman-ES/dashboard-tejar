@@ -13,6 +13,7 @@ st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="�
 # --- ESTILOS PERSONALIZADOS (CSS) ---
 st.markdown("""
 <style>
+    /* Estilos para Noticias */
     .news-card {
         background-color: #1e293b;
         padding: 15px;
@@ -24,8 +25,28 @@ st.markdown("""
     .news-title { font-size: 1.1rem; font-weight: bold; color: #fbbf24; margin-bottom: 5px; }
     .news-source { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
     .news-snippet { font-size: 0.9rem; line-height: 1.4; }
-    .read-more { color: #38bdf8; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
+    
+    /* Estilos para Tablas */
     .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
+    
+    /* NUEVO: Estilos para Tarjetas KPI (Visión General) */
+    .kpi-card {
+        background-color: #1e293b;
+        padding: 20px 10px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        border-top: 4px solid #65a30d; /* Verde por defecto */
+        margin-bottom: 20px;
+    }
+    .kpi-card.blue { border-top-color: #3b82f6; }
+    .kpi-card.yellow { border-top-color: #eab308; }
+    .kpi-card.orange { border-top-color: #f97316; }
+    
+    .kpi-icon { font-size: 28px; margin-bottom: 10px; }
+    .kpi-title { color: #94a3b8; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+    .kpi-value { color: #f8fafc; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
+    .kpi-unit { font-size: 1rem; color: #cbd5e1; font-weight: 500; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -115,7 +136,20 @@ def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
     df_elec = merge_obj(df_elec, "Planta", "Electricidad", "Optimo_kWh")
     return df_cent, df_secado, df_ext, df_elec
 
-# --- FUNCIONES DE LIMPIEZA Y DESCARGA ---
+# --- FUNCIONES DE LIMPIEZA, FORMATO Y DESCARGA ---
+def format_kpi_number(num):
+    """NUEVO: Acorta números gigantes a M (Millones) o k (Miles) para que quepan perfectos"""
+    try:
+        val = float(num)
+        if val >= 1_000_000:
+            return f"{val/1_000_000:.2f}M"
+        elif val >= 1_000:
+            return f"{val/1_000:.1f}k"
+        else:
+            return f"{val:,.0f}"
+    except:
+        return "0"
+
 @st.cache_data
 def convert_df(df):
     return df.to_csv(index=False).encode('utf-8')
@@ -137,7 +171,7 @@ def display_styled_table(df, area="", download_name="datos.csv"):
         st.dataframe(df_clean.style.format(thousands=","), hide_index=True, use_container_width=True)
         
     csv_data = convert_df(df_clean)
-    st.download_button(label="📥 Descargar datos a Excel/CSV", data=csv_data, file_name=download_name, mime='text/csv')
+    st.download_button(label="📥 Descargar a CSV", data=csv_data, file_name=download_name, mime='text/csv')
 
 def fix_number(x):
     if pd.isna(x): return x
@@ -280,22 +314,52 @@ if check_password():
 
     tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
-    # --- PESTAÑA 1: VISIÓN GENERAL ---
+    # --- PESTAÑA 1: VISIÓN GENERAL (REDISEÑADA) ---
     with tabs[0]:
         col_resumen, col_noticias = st.columns([2, 1])
         with col_resumen:
             st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
-            c1, c2, c3, c4 = st.columns(4)
             
+            # Cálculos de totales
             total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
             total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
             total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
             total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
             
-            c1.metric("Orujo Aportado (Hoy)", f"{total_orujo:,.0f} kg")
-            c2.metric("Electricidad Generada", f"{total_elec:,.0f} kWh")
-            c3.metric("Aceite Centrifugación", f"{total_aceite_cent:,.0f} kg")
-            c4.metric("Aceite Extracción", f"{total_aceite_ext:,.0f} kg")
+            # NUEVO: Tarjetas KPI con CSS (Sin puntos suspensivos y super visuales)
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.markdown(f"""
+                <div class="kpi-card">
+                    <div class="kpi-icon">📦</div>
+                    <div class="kpi-title">Orujo Recibido</div>
+                    <div class="kpi-value">{format_kpi_number(total_orujo)}<span class="kpi-unit"> kg</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c2:
+                st.markdown(f"""
+                <div class="kpi-card blue">
+                    <div class="kpi-icon">⚡</div>
+                    <div class="kpi-title">Electricidad</div>
+                    <div class="kpi-value">{format_kpi_number(total_elec)}<span class="kpi-unit"> kWh</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c3:
+                st.markdown(f"""
+                <div class="kpi-card yellow">
+                    <div class="kpi-icon">💧</div>
+                    <div class="kpi-title">Aceite Centrif.</div>
+                    <div class="kpi-value">{format_kpi_number(total_aceite_cent)}<span class="kpi-unit"> kg</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with c4:
+                st.markdown(f"""
+                <div class="kpi-card orange">
+                    <div class="kpi-icon">🗜️</div>
+                    <div class="kpi-title">Aceite Extrac.</div>
+                    <div class="kpi-value">{format_kpi_number(total_aceite_ext)}<span class="kpi-unit"> kg</span></div>
+                </div>
+                """, unsafe_allow_html=True)
             
             st.write("<br>", unsafe_allow_html=True)
             st.write("### 🤖 Análisis Operativo IA")
@@ -327,14 +391,12 @@ if check_password():
                 <div class="news-title">El precio del AOVE se estabiliza en origen</div>
                 <div class="news-source">Fuente: OleoMerca | 14 Abr 2026</div>
                 <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg, marcando un freno a las caídas de las últimas tres semanas...</div>
-                <a href="#" class="read-more">Leer completa →</a>
             </div>
             
             <div class="news-card">
-                <div class="news-title">Nuevo marco normativo para la cogeneración con orujillo</div>
+                <div class="news-title">Nuevo marco normativo para la cogeneración</div>
                 <div class="news-source">Fuente: Revista Alcuza | 13 Abr 2026</div>
-                <div class="news-snippet">El Ministerio de Transición Ecológica ha publicado el borrador que bonificará a las plantas extractoras que demuestren una alta eficiencia térmica...</div>
-                <a href="#" class="read-more">Leer completa →</a>
+                <div class="news-snippet">El Ministerio de Transición Ecológica ha publicado el borrador que bonificará a las plantas extractoras que demuestren una alta eficiencia...</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -428,7 +490,7 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD (NUEVOS GRÁFICOS DE BALA) ---
+    # --- PESTAÑA 6: ELECTRICIDAD ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
@@ -442,18 +504,14 @@ if check_password():
                 fig_bullet = go.Figure(go.Indicator(
                     mode = "number+gauge+delta",
                     value = gen,
-                    domain = {'x': [0.25, 1], 'y': [0.1, 0.9]}, # Espacio lateral izquierdo reservado para el título
+                    domain = {'x': [0.25, 1], 'y': [0.1, 0.9]},
                     title = {'text': str(row['Planta']), 'font': {'size': 18, 'color': '#f8fafc'}},
                     delta = {'reference': opt, 'position': "top", 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
                     number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
                     gauge = {
                         'shape': "bullet",
                         'axis': {'range': [None, max(opt, gen) * 1.2], 'tickcolor': "white", 'tickfont': {'color': 'white'}},
-                        'threshold': {
-                            'line': {'color': "white", 'width': 4},
-                            'thickness': 0.75,
-                            'value': opt
-                        },
+                        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': opt},
                         'bar': {'color': "#3b82f6"},
                         'bgcolor': "rgba(0,0,0,0)",
                         'steps': [
