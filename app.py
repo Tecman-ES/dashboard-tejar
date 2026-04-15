@@ -499,12 +499,12 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD ---
+    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS REDONDOS CLAROS) ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-            st.write("*(Los velocímetros muestran la producción en azul y la línea blanca marca el objetivo estratégico)*")
+            st.write("*(Los velocímetros muestran la producción en azul y la línea oscura marca el objetivo estratégico)*")
             
             # Convertimos los datos a diccionario para poder agruparlos en filas de 3
             plantas_records = df_elec.to_dict('records')
@@ -523,26 +523,26 @@ if check_password():
                             mode = "gauge+number+delta",
                             value = gen,
                             domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#f8fafc'}},
-                            delta = {'reference': opt, 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}, 'valueformat': ",.0f"},
-                            number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
+                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#1e293b'}}, # Color oscuro para página blanca
+                            delta = {'reference': opt, 'increasing': {'color': "#16a34a"}, 'decreasing': {'color': "#dc2626"}, 'valueformat': ",.0f"},
+                            number = {'font': {'size': 28, 'color': '#1e293b'}, 'valueformat': ",.0f"}, # Color oscuro
                             gauge = {
-                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "white", 'tickformat': ",.0f"},
-                                'bar': {'color': "#3b82f6", 'thickness': 0.65}, # Barra más fina y elegante
+                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "#1e293b", 'tickfont': {'color': '#1e293b'}},
+                                'bar': {'color': "#3b82f6", 'thickness': 0.7}, # Barra azul elegante
                                 'bgcolor': "rgba(0,0,0,0)",
-                                'borderwidth': 2,
-                                'bordercolor': "#334155",
+                                'borderwidth': 1,
+                                'bordercolor': "#cbd5e1",
                                 'steps': [
-                                    {'range': [0, opt*0.8], 'color': '#451a1a'},      
-                                    {'range': [opt*0.8, opt], 'color': '#422006'},    
-                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
+                                    {'range': [0, opt*0.8], 'color': '#fee2e2'},      # Rojo pastel (fondo blanco)
+                                    {'range': [opt*0.8, opt], 'color': '#fef08a'},    # Amarillo pastel
+                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#dcfce3'} # Verde pastel
                                 ],
-                                'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.85, 'value': opt}
+                                'threshold': {'line': {'color': "#0f172a", 'width': 4}, 'thickness': 0.85, 'value': opt}
                             }
                         ))
                         
-                        # Aumentado el margen superior (t=75) y la altura (height=320) para que "respiren"
-                        fig_gauge.update_layout(margin=dict(t=75, b=20, l=20, r=20), height=320, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                        # Ajuste de márgenes para que respiren en forma redonda
+                        fig_gauge.update_layout(margin=dict(t=60, b=20, l=20, r=20), height=320, paper_bgcolor="rgba(0,0,0,0)")
                         
                         with cols_velocimetros[j]:
                             st.plotly_chart(fig_gauge, use_container_width=True)
