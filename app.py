@@ -13,7 +13,6 @@ st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="�
 # --- ESTILOS PERSONALIZADOS (CSS) ---
 st.markdown("""
 <style>
-    /* Estilos para Noticias */
     .news-card {
         background-color: #1e293b;
         padding: 15px;
@@ -25,18 +24,15 @@ st.markdown("""
     .news-title { font-size: 1.1rem; font-weight: bold; color: #fbbf24; margin-bottom: 5px; }
     .news-source { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
     .news-snippet { font-size: 0.9rem; line-height: 1.4; }
-    
-    /* Estilos para Tablas */
     .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
     
-    /* NUEVO: Estilos para Tarjetas KPI (Visión General) */
     .kpi-card {
         background-color: #1e293b;
-        padding: 20px 10px;
+        padding: 20px 10px 15px 10px;
         border-radius: 10px;
         text-align: center;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-        border-top: 4px solid #65a30d; /* Verde por defecto */
+        border-top: 4px solid #65a30d; 
         margin-bottom: 20px;
     }
     .kpi-card.blue { border-top-color: #3b82f6; }
@@ -47,6 +43,12 @@ st.markdown("""
     .kpi-title { color: #94a3b8; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
     .kpi-value { color: #f8fafc; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
     .kpi-unit { font-size: 1rem; color: #cbd5e1; font-weight: 500; }
+    
+    /* ESTILOS PARA LOS DELTAS (DESVIACIONES) */
+    .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); }
+    .delta-positive { color: #4ade80; } 
+    .delta-negative { color: #ef4444; } 
+    .delta-neutral { color: #64748b; font-weight: 400; } 
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,29 +82,31 @@ def check_password():
         return False
     return True
 
-# --- FUNCIONES DE MEMORIA (EXCEL) ---
-def save_file_to_disk(uploaded_file):
-    with open("ultimo_parte.dat", "wb") as f:
+# --- FUNCIONES DE MEMORIA (MÁQUINA DEL TIEMPO) ---
+def save_file_to_disk(uploaded_file, date_obj):
+    date_str = date_obj.isoformat()
+    with open(f"parte_{date_str}.dat", "wb") as f:
         f.write(uploaded_file.getvalue())
-    with open("ultimo_parte_name.txt", "w") as f:
+    with open(f"parte_{date_str}_name.txt", "w") as f:
         f.write(uploaded_file.name)
+    with open("ultima_fecha.txt", "w") as f:
+        f.write(date_str)
 
-def load_file_from_disk():
-    if os.path.exists("ultimo_parte.dat") and os.path.exists("ultimo_parte_name.txt"):
-        with open("ultimo_parte_name.txt", "r") as f:
+def load_file_from_disk(date_obj):
+    date_str = date_obj.isoformat()
+    dat_path = f"parte_{date_str}.dat"
+    name_path = f"parte_{date_str}_name.txt"
+    if os.path.exists(dat_path) and os.path.exists(name_path):
+        with open(name_path, "r") as f:
             name = f.read().strip()
-        with open("ultimo_parte.dat", "rb") as f:
+        with open(dat_path, "rb") as f:
             content = f.read()
         file_obj = io.BytesIO(content)
         file_obj.name = name
         return file_obj
     return None
 
-def save_date_to_disk(selected_date):
-    with open("ultima_fecha.txt", "w") as f:
-        f.write(selected_date.isoformat())
-
-def load_date_from_disk():
+def load_last_date():
     if os.path.exists("ultima_fecha.txt"):
         try:
             with open("ultima_fecha.txt", "r") as f:
@@ -142,17 +146,27 @@ def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
 
 # --- FUNCIONES DE LIMPIEZA, FORMATO Y DESCARGA ---
 def format_kpi_number(num):
-    """NUEVO: Acorta números gigantes a M (Millones) o k (Miles) para que quepan perfectos"""
     try:
         val = float(num)
-        if val >= 1_000_000:
-            return f"{val/1_000_000:.2f}M"
-        elif val >= 1_000:
-            return f"{val/1_000:.1f}k"
-        else:
-            return f"{val:,.0f}"
-    except:
-        return "0"
+        if val >= 1_000_000: return f"{val/1_000_000:.2f}M"
+        elif val >= 1_000: return f"{val/1_000:.1f}k"
+        else: return f"{val:,.0f}"
+    except: return "0"
+
+def get_delta_html(real, target):
+    """Calcula la desviación y devuelve HTML con colores (Deltas)"""
+    if not target or target == 0 or pd.isna(target):
+        return "<div class='kpi-delta delta-neutral'>Sin objetivo definido</div>"
+    
+    diff = real - target
+    pct = (diff / target) * 100
+    
+    if diff > 0:
+        return f"<div class='kpi-delta delta-positive'>▲ +{format_kpi_number(diff)} (+{pct:.1f}%)</div>"
+    elif diff < 0:
+        return f"<div class='kpi-delta delta-negative'>▼ {format_kpi_number(diff)} ({pct:.1f}%)</div>"
+    else:
+        return "<div class='kpi-delta delta-neutral'>▬ Objetivo exacto</div>"
 
 @st.cache_data
 def convert_df(df):
@@ -250,14 +264,7 @@ def load_data(uploaded_file):
             
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
         except: pass
-            
-    df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780], "Acum. Mensual": [10362240, 0, 9152660, 173220, 3579480, 2918540, 0, 2281940]})
-    df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
-    df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Acidez": [2.92, 11.15, 7.81]})
-    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298]})
-    df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena"], "OGS_Procesado": [570400, 110000], "Salida_Orujillo": [443740, 101700], "Aceite_Prod": [31800, 8300]})
-    df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229]})
-    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
+    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 def filter_dataframe(df, column_name, planta_seleccionada):
     if df.empty or planta_seleccionada == "Todas" or column_name not in df.columns:
@@ -282,132 +289,152 @@ if check_password():
             st.session_state["login_ok"] = False
             st.session_state["role"] = None
             st.rerun()
-    
-    if role == "oficina":
-        st.info("👋 **Modo Oficina:** Selecciona la fecha y sube el parte diario.")
-        with st.container():
-            col_fecha, col_archivo = st.columns([1, 2])
-            with col_fecha:
-                fecha_seleccionada = st.date_input("📅 Fecha del Parte", load_date_from_disk())
-                if fecha_seleccionada != load_date_from_disk():
-                    save_date_to_disk(fecha_seleccionada)
-            with col_archivo:
-                archivo_subido = st.file_uploader("📂 Sube tu Archivo (.csv, .xlsx)", type=["xlsx", "xls", "csv"], label_visibility="visible")
-                if archivo_subido is not None:
-                    save_file_to_disk(archivo_subido)
-                    st.success("✅ Archivo guardado correctamente en la base de datos.")
-    
-    fecha_reporte = load_date_from_disk()
-    archivo_compartido = load_file_from_disk()
-    if archivo_compartido is None and role == "presidente":
-        st.warning("⚠️ Aún no se ha subido el parte diario de hoy. Mostrando datos de prueba.")
-        
-    df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
-    df_obj = load_objectives()
-    
-    df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
-    
+            
     st.markdown("---")
+    
+    # --- SELECTOR DE MÁQUINA DEL TIEMPO (GLOBAL) ---
     col_date, col_filter = st.columns([1, 2])
     with col_date:
-        st.markdown(f"**Fecha de reporte activo:** {fecha_reporte.strftime('%d de %B de %Y')}")
+        fecha_activa = st.date_input("📅 Selecciona la Fecha del Reporte:", load_last_date())
+        # Actualizamos la memoria para la próxima vez
+        if fecha_activa != load_last_date():
+            with open("ultima_fecha.txt", "w") as f:
+                f.write(fecha_activa.isoformat())
+    
     with col_filter:
         plantas_disponibles = ["Todas", "Baena", "Cabra", "Marchena", "Palenciana", "Pedro Abad", "Espejo", "Bogarre", "Mancha Real", "Algodonales", "Vetejar", "El Tejar"]
         planta_activa = st.selectbox("📍 Filtro Global por Planta/Centro:", plantas_disponibles)
 
+    # --- ZONA DE SUBIDA (SOLO OFICINA) ---
+    if role == "oficina":
+        st.info(f"👋 **Modo Oficina:** Si subes el archivo ahora, quedará asignado al **{fecha_activa.strftime('%d/%m/%Y')}**.")
+        with st.container():
+            archivo_subido = st.file_uploader("📂 Sube tu Archivo (.csv, .xlsx)", type=["xlsx", "xls", "csv"], label_visibility="visible")
+            if archivo_subido is not None:
+                save_file_to_disk(archivo_subido, fecha_activa)
+                st.success(f"✅ Archivo guardado correctamente en la base de datos histórica para el {fecha_activa.strftime('%d/%m/%Y')}.")
+    
+    # --- CARGA DE DATOS PARA LA FECHA ACTIVA ---
+    archivo_compartido = load_file_from_disk(fecha_activa)
+    if archivo_compartido is None:
+        st.warning(f"⚠️ Aún no hay ningún parte subido para el día **{fecha_activa.strftime('%d/%m/%Y')}**. Por favor, contacte con oficina o seleccione otra fecha.")
+        df_aport = pd.DataFrame()
+        df_existencias = pd.DataFrame()
+        df_cent = pd.DataFrame()
+        df_secado = pd.DataFrame()
+        df_ext = pd.DataFrame()
+        df_elec = pd.DataFrame()
+    else:
+        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
+        
+    df_obj = load_objectives()
+    df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
+    
+    # Aplicamos filtro global
     df_aport = filter_dataframe(df_aport, "Planta", planta_activa)
     df_cent = filter_dataframe(df_cent, "Centro", planta_activa)
     df_secado = filter_dataframe(df_secado, "Centro", planta_activa)
     df_ext = filter_dataframe(df_ext, "Extractora", planta_activa)
     df_elec = filter_dataframe(df_elec, "Planta", planta_activa)
+    df_obj_filtered = filter_dataframe(df_obj, "Planta", planta_activa)
 
     tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
-    # --- PESTAÑA 1: VISIÓN GENERAL (REDISEÑADA) ---
+    # --- PESTAÑA 1: VISIÓN GENERAL (CON DELTAS) ---
     with tabs[0]:
-        col_resumen, col_noticias = st.columns([2, 1])
-        with col_resumen:
-            st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
-            
-            # Cálculos de totales
-            total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
-            total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
-            total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
-            total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
-            
-            # NUEVO: Tarjetas KPI con CSS (Sin puntos suspensivos y super visuales)
-            c1, c2, c3, c4 = st.columns(4)
-            with c1:
-                st.markdown(f"""
-                <div class="kpi-card">
-                    <div class="kpi-icon">📦</div>
-                    <div class="kpi-title">Orujo Recibido</div>
-                    <div class="kpi-value">{format_kpi_number(total_orujo)}<span class="kpi-unit"> kg</span></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c2:
-                st.markdown(f"""
-                <div class="kpi-card blue">
-                    <div class="kpi-icon">⚡</div>
-                    <div class="kpi-title">Electricidad</div>
-                    <div class="kpi-value">{format_kpi_number(total_elec)}<span class="kpi-unit"> kWh</span></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c3:
-                st.markdown(f"""
-                <div class="kpi-card yellow">
-                    <div class="kpi-icon">💧</div>
-                    <div class="kpi-title">Aceite Centrif.</div>
-                    <div class="kpi-value">{format_kpi_number(total_aceite_cent)}<span class="kpi-unit"> kg</span></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c4:
-                st.markdown(f"""
-                <div class="kpi-card orange">
-                    <div class="kpi-icon">🗜️</div>
-                    <div class="kpi-title">Aceite Extrac.</div>
-                    <div class="kpi-value">{format_kpi_number(total_aceite_ext)}<span class="kpi-unit"> kg</span></div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            st.write("<br>", unsafe_allow_html=True)
-            st.write("### 🤖 Análisis Operativo IA")
-            
-            alertas = []
-            if not df_cent.empty and 'Acidez' in df_cent.columns:
-                for _, row in df_cent.iterrows():
-                    val_acidez = row['Acidez']
-                    if pd.notnull(val_acidez) and isinstance(val_acidez, (int, float)) and val_acidez > 3:
-                        alertas.append(f"⚠️ **Centrifugación {row.get('Centro', '')}:** Acidez crítica detectada ({val_acidez}%)")
-            
-            if not df_elec.empty and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-                for _, row in df_elec.iterrows():
-                    val_gen, val_opt = row['Generada_kWh'], row['Optimo_kWh']
-                    if pd.notnull(val_gen) and pd.notnull(val_opt) and val_gen > val_opt:
-                        alertas.append(f"✅ **Electricidad {row.get('Planta', '')}:** Rendimiento supera el objetivo estratégico.")
+        if not df_aport.empty or not df_elec.empty:
+            col_resumen, col_noticias = st.columns([2, 1])
+            with col_resumen:
+                st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
+                
+                # Cálculos de totales y Deltas (Desviaciones)
+                total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
+                total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
+                total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
+                total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
+                
+                # Objetivos
+                target_elec = df_obj_filtered[df_obj_filtered['Area']=='Electricidad']['Objetivo_Diario'].sum()
+                target_cent = df_obj_filtered[df_obj_filtered['Area']=='Centrifugacion']['Objetivo_Diario'].sum()
+                target_ext = df_obj_filtered[df_obj_filtered['Area']=='Extraccion']['Objetivo_Diario'].sum()
+                
+                # Tarjetas KPI con CSS + Deltas HTML
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.markdown(f"""
+                    <div class="kpi-card">
+                        <div class="kpi-icon">📦</div>
+                        <div class="kpi-title">Orujo Recibido</div>
+                        <div class="kpi-value">{format_kpi_number(total_orujo)}<span class="kpi-unit"> kg</span></div>
+                        <div class="kpi-delta delta-neutral">Materia prima de entrada</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"""
+                    <div class="kpi-card blue">
+                        <div class="kpi-icon">⚡</div>
+                        <div class="kpi-title">Electricidad</div>
+                        <div class="kpi-value">{format_kpi_number(total_elec)}<span class="kpi-unit"> kWh</span></div>
+                        {get_delta_html(total_elec, target_elec)}
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c3:
+                    st.markdown(f"""
+                    <div class="kpi-card yellow">
+                        <div class="kpi-icon">💧</div>
+                        <div class="kpi-title">Aceite Centrif.</div>
+                        <div class="kpi-value">{format_kpi_number(total_aceite_cent)}<span class="kpi-unit"> kg</span></div>
+                        {get_delta_html(total_aceite_cent, target_cent)}
+                    </div>
+                    """, unsafe_allow_html=True)
+                with c4:
+                    # ICONO CAMBIADO A ALAMBIQUE/MATRAZ (⚗️)
+                    st.markdown(f"""
+                    <div class="kpi-card orange">
+                        <div class="kpi-icon">⚗️</div>
+                        <div class="kpi-title">Aceite Extrac.</div>
+                        <div class="kpi-value">{format_kpi_number(total_aceite_ext)}<span class="kpi-unit"> kg</span></div>
+                        {get_delta_html(total_aceite_ext, target_ext)}
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                st.write("<br>", unsafe_allow_html=True)
+                st.write("### 🤖 Análisis Operativo IA")
+                
+                alertas = []
+                if not df_cent.empty and 'Acidez' in df_cent.columns:
+                    for _, row in df_cent.iterrows():
+                        val_acidez = row['Acidez']
+                        if pd.notnull(val_acidez) and isinstance(val_acidez, (int, float)) and val_acidez > 3:
+                            alertas.append(f"⚠️ **Centrifugación {row.get('Centro', '')}:** Acidez crítica detectada ({val_acidez}%)")
+                
+                if not df_elec.empty and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
+                    for _, row in df_elec.iterrows():
+                        val_gen, val_opt = row['Generada_kWh'], row['Optimo_kWh']
+                        if pd.notnull(val_gen) and pd.notnull(val_opt) and val_gen > val_opt:
+                            alertas.append(f"✅ **Electricidad {row.get('Planta', '')}:** Rendimiento supera el objetivo estratégico.")
 
-            if not alertas:
-                st.success(f"✅ **Operaciones Normales en {planta_activa}:** Todos los parámetros se encuentran dentro de los límites esperados hoy.")
-            else:
-                for a in alertas:
-                    if "⚠️" in a: st.error(a)
-                    else: st.success(a)
+                if not alertas:
+                    st.success(f"✅ **Operaciones Normales en {planta_activa}:** Todos los parámetros se encuentran dentro de los límites esperados hoy.")
+                else:
+                    for a in alertas:
+                        if "⚠️" in a: st.error(a)
+                        else: st.success(a)
 
-        with col_noticias:
-            st.subheader("📰 Actualidad del Sector")
-            st.markdown("""
-            <div class="news-card">
-                <div class="news-title">El precio del AOVE se estabiliza en origen</div>
-                <div class="news-source">Fuente: OleoMerca | 14 Abr 2026</div>
-                <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg, marcando un freno a las caídas de las últimas tres semanas...</div>
-            </div>
-            
-            <div class="news-card">
-                <div class="news-title">Nuevo marco normativo para la cogeneración</div>
-                <div class="news-source">Fuente: Revista Alcuza | 13 Abr 2026</div>
-                <div class="news-snippet">El Ministerio de Transición Ecológica ha publicado el borrador que bonificará a las plantas extractoras que demuestren una alta eficiencia...</div>
-            </div>
-            """, unsafe_allow_html=True)
+            with col_noticias:
+                st.subheader("📰 Actualidad del Sector")
+                st.markdown("""
+                <div class="news-card">
+                    <div class="news-title">El precio del AOVE se estabiliza en origen</div>
+                    <div class="news-source">Fuente: OleoMerca | Abril 2026</div>
+                    <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg, marcando un freno a las caídas de las últimas tres semanas...</div>
+                </div>
+                <div class="news-card">
+                    <div class="news-title">Nuevo marco normativo para la cogeneración</div>
+                    <div class="news-source">Fuente: Revista Alcuza | Abril 2026</div>
+                    <div class="news-snippet">El Ministerio de Transición Ecológica ha publicado el borrador que bonificará a las plantas extractoras que demuestren una alta eficiencia...</div>
+                </div>
+                """, unsafe_allow_html=True)
 
     # --- PESTAÑA 2: APORTACIONES ---
     with tabs[1]:
@@ -499,53 +526,39 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS REDONDOS CLAROS) ---
+    # --- PESTAÑA 6: ELECTRICIDAD ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-            st.write("*(Los velocímetros muestran la producción en azul y la línea oscura marca el objetivo estratégico)*")
+            st.write("*(Los gráficos de bala muestran la producción en azul y tu objetivo como una línea blanca vertical)*")
             
-            # Convertimos los datos a diccionario para poder agruparlos en filas de 3
-            plantas_records = df_elec.to_dict('records')
-            
-            # Bucle para crear una cuadrícula estricta de 3 columnas máximo por fila
-            for i in range(0, len(plantas_records), 3):
-                cols_velocimetros = st.columns(3)
+            for i, row in df_elec.iterrows():
+                gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
+                opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
                 
-                for j in range(3):
-                    if i + j < len(plantas_records):
-                        row = plantas_records[i + j]
-                        gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
-                        opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
-                        
-                        fig_gauge = go.Figure(go.Indicator(
-                            mode = "gauge+number+delta",
-                            value = gen,
-                            domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#1e293b'}}, # Color oscuro para página blanca
-                            delta = {'reference': opt, 'increasing': {'color': "#16a34a"}, 'decreasing': {'color': "#dc2626"}, 'valueformat': ",.0f"},
-                            number = {'font': {'size': 28, 'color': '#1e293b'}, 'valueformat': ",.0f"}, # Color oscuro
-                            gauge = {
-                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "#1e293b", 'tickfont': {'color': '#1e293b'}},
-                                'bar': {'color': "#3b82f6", 'thickness': 0.7}, # Barra azul elegante
-                                'bgcolor': "rgba(0,0,0,0)",
-                                'borderwidth': 1,
-                                'bordercolor': "#cbd5e1",
-                                'steps': [
-                                    {'range': [0, opt*0.8], 'color': '#fee2e2'},      # Rojo pastel (fondo blanco)
-                                    {'range': [opt*0.8, opt], 'color': '#fef08a'},    # Amarillo pastel
-                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#dcfce3'} # Verde pastel
-                                ],
-                                'threshold': {'line': {'color': "#0f172a", 'width': 4}, 'thickness': 0.85, 'value': opt}
-                            }
-                        ))
-                        
-                        # Ajuste de márgenes para que respiren en forma redonda
-                        fig_gauge.update_layout(margin=dict(t=60, b=20, l=20, r=20), height=320, paper_bgcolor="rgba(0,0,0,0)")
-                        
-                        with cols_velocimetros[j]:
-                            st.plotly_chart(fig_gauge, use_container_width=True)
+                fig_bullet = go.Figure(go.Indicator(
+                    mode = "number+gauge+delta",
+                    value = gen,
+                    domain = {'x': [0.25, 1], 'y': [0.1, 0.9]},
+                    title = {'text': str(row['Planta']), 'font': {'size': 18, 'color': '#f8fafc'}},
+                    delta = {'reference': opt, 'position': "top", 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
+                    number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
+                    gauge = {
+                        'shape': "bullet",
+                        'axis': {'range': [None, max(opt, gen) * 1.2], 'tickcolor': "white", 'tickfont': {'color': 'white'}},
+                        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': opt},
+                        'bar': {'color': "#3b82f6"},
+                        'bgcolor': "rgba(0,0,0,0)",
+                        'steps': [
+                            {'range': [0, opt*0.8], 'color': '#451a1a'},      
+                            {'range': [opt*0.8, opt], 'color': '#422006'},    
+                            {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
+                        ]
+                    }
+                ))
+                fig_bullet.update_layout(margin=dict(t=30, b=20, l=10, r=30), height=140, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                st.plotly_chart(fig_bullet, use_container_width=True)
                 
         else: st.info(f"Faltan datos eléctricos para calcular rendimientos de: {planta_activa}")
         
