@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 from datetime import date
 import io
 import csv
+import os
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
@@ -28,28 +29,66 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- LOGIN ---
+# --- SISTEMA DE DOBLE LOGIN ---
 def check_password():
     if "login_ok" not in st.session_state:
         st.session_state["login_ok"] = False
+        st.session_state["role"] = None
+        
     if not st.session_state["login_ok"]:
         col1, col2, col3 = st.columns([1,2,1])
         with col2:
             st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
-            usuario = st.text_input("Usuario")
+            usuario = st.text_input("Usuario (oficina / presidente)")
             password = st.text_input("Contraseña", type="password")
             if st.button("Entrar", use_container_width=True):
                 if usuario == "presidente" and password == "Tejar2026":
                     st.session_state["login_ok"] = True
+                    st.session_state["role"] = "presidente"
+                    st.rerun()
+                elif usuario == "oficina" and password == "Tejar2026":
+                    st.session_state["login_ok"] = True
+                    st.session_state["role"] = "oficina"
                     st.rerun()
                 else:
                     st.error("Credenciales incorrectas")
         return False
     return True
 
+# --- FUNCIONES DE MEMORIA (GUARDADO EN SERVIDOR) ---
+def save_file_to_disk(uploaded_file):
+    """Guarda el archivo subido en el servidor para que el presidente lo vea luego"""
+    with open("ultimo_parte.dat", "wb") as f:
+        f.write(uploaded_file.getvalue())
+    with open("ultimo_parte_name.txt", "w") as f:
+        f.write(uploaded_file.name)
+
+def load_file_from_disk():
+    """Recupera el último archivo que subió la oficinista"""
+    if os.path.exists("ultimo_parte.dat") and os.path.exists("ultimo_parte_name.txt"):
+        with open("ultimo_parte_name.txt", "r") as f:
+            name = f.read().strip()
+        with open("ultimo_parte.dat", "rb") as f:
+            content = f.read()
+        file_obj = io.BytesIO(content)
+        file_obj.name = name
+        return file_obj
+    return None
+
+def save_date_to_disk(selected_date):
+    with open("ultima_fecha.txt", "w") as f:
+        f.write(selected_date.isoformat())
+
+def load_date_from_disk():
+    if os.path.exists("ultima_fecha.txt"):
+        try:
+            with open("ultima_fecha.txt", "r") as f:
+                return date.fromisoformat(f.read().strip())
+        except: pass
+    return date(2026, 4, 14)
+
 # --- FUNCIONES DE FORMATO Y LIMPIEZA ---
 def format_df_numbers(df):
-    """Formatea columnas numéricas para mostrar separadores de miles"""
     styled_df = df.copy()
     for col in styled_df.columns:
         if pd.api.types.is_numeric_dtype(styled_df[col]):
@@ -58,7 +97,6 @@ def format_df_numbers(df):
     return styled_df
 
 def fix_number(x):
-    """Convierte números españoles y limpia comas fantasma de Excel"""
     if pd.isna(x): return x
     if isinstance(x, str):
         x = x.strip()
@@ -133,13 +171,11 @@ def load_data(uploaded_file):
             df_ext = extract_table(df_raw, "# EXTRACCION")
             df_elec = extract_table(df_raw, "# ELECTRICIDAD")
             
-            st.success("✅ Archivo leído y sincronizado perfectamente")
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
         except Exception as e:
             st.error(f"Error grave: {e}")
             
     # DATOS DE DEMOSTRACIÓN
-    st.info("📊 Mostrando datos de prueba. Sube tu archivo para ver los datos reales.")
     df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
     df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Optimo": [5251, 442, 1906], "Acidez": [2.92, 11.15, 7.81]})
@@ -151,20 +187,49 @@ def load_data(uploaded_file):
 # --- APLICACIÓN PRINCIPAL ---
 if check_password():
     
-    st.title("📊 Panel Operativo - Oleícola El Tejar SCA")
+    role = st.session_state["role"]
     
-    # --- ÁREA DE CARGA DE DATOS ESTÁTICA ARRIBA ---
-    with st.container():
-        col_fecha, col_archivo = st.columns([1, 2])
-        with col_fecha:
-            fecha_reporte = st.date_input("📅 Fecha del Parte", date(2026, 4, 14))
-        with col_archivo:
-            archivo_subido = st.file_uploader("📂 Sube tu Archivo (.csv, .xlsx)", type=["xlsx", "xls", "csv"], label_visibility="visible")
+    # --- ENCABEZADO Y CERRAR SESIÓN ---
+    col_titulo, col_logout = st.columns([10, 1])
+    with col_titulo:
+        st.title("📊 Panel Operativo - Oleícola El Tejar SCA")
+    with col_logout:
+        st.write("<br>", unsafe_allow_html=True)
+        if st.button("🚪 Salir"):
+            st.session_state["login_ok"] = False
+            st.session_state["role"] = None
+            st.rerun()
     
-    # Cargar datos
-    df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_subido)
+    # --- ÁREA DE CARGA DE DATOS (SOLO PARA OFICINA) ---
+    if role == "oficina":
+        st.info("👋 **Modo Oficina:** Selecciona la fecha y sube el parte diario. Se guardará automáticamente para el Presidente.")
+        with st.container():
+            col_fecha, col_archivo = st.columns([1, 2])
+            with col_fecha:
+                fecha_seleccionada = st.date_input("📅 Fecha del Parte", load_date_from_disk())
+                if fecha_seleccionada != load_date_from_disk():
+                    save_date_to_disk(fecha_seleccionada)
+            with col_archivo:
+                archivo_subido = st.file_uploader("📂 Sube tu Archivo (.csv, .xlsx)", type=["xlsx", "xls", "csv"], label_visibility="visible")
+                if archivo_subido is not None:
+                    save_file_to_disk(archivo_subido)
+                    st.success("✅ Archivo guardado correctamente en la base de datos.")
+    
+    # --- LECTURA DE LOS DATOS GUARDADOS ---
+    # El presidente (o la oficinista) siempre lee el archivo que esté guardado en el disco
+    fecha_reporte = load_date_from_disk()
+    archivo_compartido = load_file_from_disk()
+    
+    # Si no hay archivo, avisamos. Si lo hay, lo cargamos.
+    if archivo_compartido is None and role == "presidente":
+        st.warning("⚠️ Aún no se ha subido el parte diario de hoy. Mostrando datos de prueba.")
+        
+    df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
+    
+    st.markdown(f"**Fecha de reporte activo:** {fecha_reporte.strftime('%d de %B de %Y')}")
     st.markdown("---")
 
+    # --- RESTO DEL DASHBOARD (VISIBLE PARA AMBOS) ---
     tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad"])
 
     # --- PESTAÑA 1: VISIÓN GENERAL ---
@@ -229,7 +294,6 @@ if check_password():
         
         st.markdown("---")
         st.write("### Métricas Detalladas (Tabla Completa)")
-        st.write("*(Esta tabla ocupará todo el ancho y mostrará automáticamente cualquier columna nueva que añadas al Excel)*")
         if not df_cent.empty:
             st.dataframe(format_df_numbers(df_cent), hide_index=True, use_container_width=True)
 
