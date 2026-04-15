@@ -167,22 +167,13 @@ def get_delta_html(real, target):
     else:
         return "<div class='kpi-delta delta-neutral'>▬ Objetivo exacto</div>"
 
-# --- NUEVA FUNCIÓN PARA TARJETAS CON DATO DIARIO Y MENSUAL ---
-def get_kpi_card_html(title, icon, val_hoy, val_mes, unit, delta_html, css_class=""):
+# --- FUNCION PARA TARJETAS KPI (SIMPLIFICADA Y LIMPIA) ---
+def get_kpi_card_html(title, icon, val, unit, delta_html, css_class=""):
     return f"""
     <div class="kpi-card {css_class}">
         <div class="kpi-icon">{icon}</div>
         <div class="kpi-title">{title}</div>
-        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px;">
-            <div style="text-align: left;">
-                <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Día (Hoy)</div>
-                <div class="kpi-value">{format_kpi_number(val_hoy)}<span class="kpi-unit"> {unit}</span></div>
-            </div>
-            <div style="text-align: right;">
-                <div style="font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Mes (Acum)</div>
-                <div style="font-size: 1.4rem; font-weight: 700; color: #cbd5e1;">{format_kpi_number(val_mes)}<span class="kpi-unit"> {unit}</span></div>
-            </div>
-        </div>
+        <div class="kpi-value">{format_kpi_number(val)}<span class="kpi-unit"> {unit}</span></div>
         {delta_html}
     </div>
     """
@@ -391,16 +382,29 @@ if check_password():
                 target_cent = df_obj_filtered[df_obj_filtered['Area']=='Centrifugacion']['Objetivo_Diario'].sum()
                 target_ext = df_obj_filtered[df_obj_filtered['Area']=='Extraccion']['Objetivo_Diario'].sum()
                 
-                # Tarjetas KPI con CSS + Deltas HTML + Dato Mensual
+                # --- FILA 1: PRODUCCIÓN DIARIA ---
+                st.markdown("#### 📅 Producción Diaria (Hoy)")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, total_orujo_mes, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
                 with c2:
-                    st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, total_elec_mes, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
                 with c3:
-                    st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, total_aceite_cent_mes, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
                 with c4:
-                    st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, total_aceite_ext_mes, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
+                    st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
+                
+                # --- FILA 2: ACUMULADO MENSUAL ---
+                st.markdown("<br>#### 📊 Acumulado Mensual", unsafe_allow_html=True)
+                m1, m2, m3, m4 = st.columns(4)
+                with m1:
+                    st.markdown(get_kpi_card_html("Orujo (Mes)", "📦", total_orujo_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", ""), unsafe_allow_html=True)
+                with m2:
+                    st.markdown(get_kpi_card_html("Electricidad (Mes)", "⚡", total_elec_mes, "kWh", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "blue"), unsafe_allow_html=True)
+                with m3:
+                    st.markdown(get_kpi_card_html("Aceite Centrif. (Mes)", "💧", total_aceite_cent_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "yellow"), unsafe_allow_html=True)
+                with m4:
+                    st.markdown(get_kpi_card_html("Aceite Extrac. (Mes)", "⚗️", total_aceite_ext_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "orange"), unsafe_allow_html=True)
                 
                 st.write("<br>", unsafe_allow_html=True)
                 st.write("### 🤖 Análisis Operativo IA")
