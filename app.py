@@ -436,11 +436,13 @@ if check_password():
                     <div class="news-title">El precio del AOVE se estabiliza en origen</div>
                     <div class="news-source">Fuente: OleoMerca | Abril 2026</div>
                     <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg, marcando un freno a las caídas de las últimas tres semanas...</div>
+                    <a href="https://www.olimerca.com/" target="_blank" class="read-more" style="display: inline-block; margin-top: 8px;">Leer completa →</a>
                 </div>
                 <div class="news-card">
                     <div class="news-title">Nuevo marco normativo para la cogeneración</div>
                     <div class="news-source">Fuente: Revista Alcuza | Abril 2026</div>
                     <div class="news-snippet">El Ministerio de Transición Ecológica ha publicado el borrador que bonificará a las plantas extractoras que demuestren una alta eficiencia...</div>
+                    <a href="https://www.mercacei.com/" target="_blank" class="read-more" style="display: inline-block; margin-top: 8px;">Leer completa →</a>
                 </div>
                 """, unsafe_allow_html=True)
 
