@@ -207,7 +207,7 @@ def load_data(uploaded_file):
         except: pass
             
     # DATOS DEMO
-    df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780]})
+    df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780], "Acum. Mensual": [10362240, 0, 9152660, 173220, 3579480, 2918540, 0, 2281940]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
     df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Acidez": [2.92, 11.15, 7.81]})
     df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298]})
@@ -219,7 +219,6 @@ def load_data(uploaded_file):
 def filter_dataframe(df, column_name, planta_seleccionada):
     if df.empty or planta_seleccionada == "Todas" or column_name not in df.columns:
         return df
-    # Filtrar buscando que el nombre de la planta contenga el texto seleccionado (ej. Baena filtra Baena 25MW)
     return df[df[column_name].astype(str).str.contains(planta_seleccionada, case=False, na=False)].reset_index(drop=True)
 
 # --- APLICACIÓN PRINCIPAL ---
@@ -260,7 +259,7 @@ if check_password():
     
     df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
     
-    # --- INTERFAZ: FILTRO GLOBAL (MEJORA #2) ---
+    # --- INTERFAZ: FILTRO GLOBAL ---
     st.markdown("---")
     col_date, col_filter = st.columns([1, 2])
     with col_date:
@@ -269,7 +268,6 @@ if check_password():
         plantas_disponibles = ["Todas", "Baena", "Cabra", "Marchena", "Palenciana", "Pedro Abad", "Espejo", "Bogarre", "Mancha Real", "Algodonales", "Vetejar", "El Tejar"]
         planta_activa = st.selectbox("📍 Filtro Global por Planta/Centro:", plantas_disponibles)
 
-    # Aplicar el filtro a todos los dataframes
     df_aport = filter_dataframe(df_aport, "Planta", planta_activa)
     df_cent = filter_dataframe(df_cent, "Centro", planta_activa)
     df_secado = filter_dataframe(df_secado, "Centro", planta_activa)
@@ -284,16 +282,18 @@ if check_password():
         col_resumen, col_noticias = st.columns([2, 1])
         with col_resumen:
             st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
-            c1, c2, c3 = st.columns(3)
+            # SEPARACIÓN DE ACEITES (Mejora solicitada: 4 columnas)
+            c1, c2, c3, c4 = st.columns(4)
             
             total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
             total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
-            total_aceite = (df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0) + \
-                           (df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0)
+            total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
+            total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
             
             c1.metric("Orujo Aportado (Hoy)", f"{total_orujo:,.0f} kg")
             c2.metric("Electricidad Generada", f"{total_elec:,.0f} kWh")
-            c3.metric("Aceite Obtenido Total", f"{total_aceite:,.0f} kg")
+            c3.metric("Aceite Centrifugación", f"{total_aceite_cent:,.0f} kg")
+            c4.metric("Aceite Extracción", f"{total_aceite_ext:,.0f} kg")
             
             st.write("<br>", unsafe_allow_html=True)
             st.write("### 🤖 Análisis Operativo IA")
@@ -320,22 +320,44 @@ if check_password():
 
         with col_noticias:
             st.subheader("📰 Actualidad del Sector")
+            # SEGUNDA NOTICIA AÑADIDA
             st.markdown("""
             <div class="news-card">
                 <div class="news-title">El precio del AOVE se estabiliza en origen</div>
                 <div class="news-source">Fuente: OleoMerca | 14 Abr 2026</div>
-                <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg...</div>
+                <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg, marcando un freno a las caídas de las últimas tres semanas...</div>
+                <a href="#" class="read-more">Leer completa →</a>
+            </div>
+            
+            <div class="news-card">
+                <div class="news-title">Nuevo marco normativo para la cogeneración con orujillo</div>
+                <div class="news-source">Fuente: Revista Alcuza | 13 Abr 2026</div>
+                <div class="news-snippet">El Ministerio de Transición Ecológica ha publicado el borrador que bonificará a las plantas extractoras que demuestren una alta eficiencia térmica...</div>
+                <a href="#" class="read-more">Leer completa →</a>
             </div>
             """, unsafe_allow_html=True)
 
-    # --- PESTAÑA 2: APORTACIONES ---
+    # --- PESTAÑA 2: APORTACIONES (Añadido Acumulado Mensual) ---
     with tabs[1]:
-        st.subheader("Orujo Aportado Hoy (kg)")
-        if not df_aport.empty and 'Planta' in df_aport.columns and 'Hoy (kg)' in df_aport.columns:
-            fig_aport = px.bar(df_aport, x="Planta", y="Hoy (kg)")
-            fig_aport.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8d6e63')
-            fig_aport.update_layout(yaxis=dict(tickformat=","))
-            st.plotly_chart(fig_aport, use_container_width=True)
+        col_hoy, col_mes = st.columns(2)
+        
+        with col_hoy:
+            st.subheader("Orujo Aportado Hoy (kg)")
+            if not df_aport.empty and 'Planta' in df_aport.columns and 'Hoy (kg)' in df_aport.columns:
+                fig_aport = px.bar(df_aport, x="Planta", y="Hoy (kg)")
+                fig_aport.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8d6e63')
+                fig_aport.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_aport, use_container_width=True)
+            else: st.info("Faltan datos de Aportaciones diarias.")
+            
+        with col_mes:
+            st.subheader("Acumulado Mensual (kg)")
+            if not df_aport.empty and 'Planta' in df_aport.columns and 'Acum. Mensual' in df_aport.columns:
+                fig_aport_mes = px.bar(df_aport, x="Planta", y="Acum. Mensual")
+                fig_aport_mes.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#60a5fa')
+                fig_aport_mes.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_aport_mes, use_container_width=True)
+            else: st.info("Faltan datos de Acumulado Mensual.")
             
         st.write("### Tabla General de Aportaciones")
         display_styled_table(df_aport)
@@ -344,17 +366,28 @@ if check_password():
             st.write("### Existencias Estratégicas Totales")
             display_styled_table(df_existencias)
 
-    # --- PESTAÑA 3: CENTRIFUGACIÓN ---
+    # --- PESTAÑA 3: CENTRIFUGACIÓN (Añadida Gráfica de Entradas) ---
     with tabs[2]:
-        st.subheader("Aceite Producido vs Óptimo Industrial (kg)")
-        if not df_cent.empty and 'Centro' in df_cent.columns and 'Aceite_Prod' in df_cent.columns:
-            fig_cent_comp = go.Figure()
-            fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Aceite_Prod'], name='Producido', marker_color='#fbbf24', text=df_cent['Aceite_Prod'], texttemplate='%{text:,.0f}'))
-            if 'Optimo' in df_cent.columns:
-                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo (Mis Objetivos)', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
-            fig_cent_comp.update_layout(barmode='group', yaxis=dict(tickformat=","))
-            st.plotly_chart(fig_cent_comp, use_container_width=True)
-        else: st.info(f"Sin datos de Centrifugación para: {planta_activa}")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("Entrada de Alperujo (kg)")
+            if not df_cent.empty and 'Centro' in df_cent.columns and 'Entrada_Alperujo' in df_cent.columns:
+                fig_entrada_cent = px.bar(df_cent, x="Centro", y="Entrada_Alperujo")
+                fig_entrada_cent.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#4ade80')
+                fig_entrada_cent.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_entrada_cent, use_container_width=True)
+            else: st.info("Faltan datos de Entrada de Alperujo.")
+            
+        with col2:
+            st.subheader("Aceite Producido vs Óptimo Industrial (kg)")
+            if not df_cent.empty and 'Centro' in df_cent.columns and 'Aceite_Prod' in df_cent.columns:
+                fig_cent_comp = go.Figure()
+                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Aceite_Prod'], name='Producido', marker_color='#fbbf24', text=df_cent['Aceite_Prod'], texttemplate='%{text:,.0f}'))
+                if 'Optimo' in df_cent.columns:
+                    fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
+                fig_cent_comp.update_layout(barmode='group', yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_cent_comp, use_container_width=True)
+            else: st.info("Faltan datos de Aceite Producido.")
         
         st.markdown("---")
         st.write("### Métricas Detalladas (Semaforización Activa)")
@@ -398,24 +431,24 @@ if check_password():
         st.write("### Tabla de Extracción")
         display_styled_table(df_ext)
 
-    # --- PESTAÑA 6: ELECTRICIDAD (CON VELOCÍMETROS MEJORA #3) ---
+    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS MEJORADOS) ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-            # Crear columnas para que los velocímetros se vean uno al lado del otro
-            cols_velocimetros = st.columns(len(df_elec))
+            # Dividir en un máximo de 3 columnas por fila para evitar que se aplasten
+            num_cols = min(len(df_elec), 3)
+            cols_velocimetros = st.columns(num_cols)
             
             for i, row in df_elec.iterrows():
                 gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
-                opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 # Para evitar div 0
+                opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
                 
-                # Gráfico de Velocímetro (Gauge Chart)
                 fig_gauge = go.Figure(go.Indicator(
                     mode = "gauge+number+delta",
                     value = gen,
                     domain = {'x': [0, 1], 'y': [0, 1]},
-                    title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#f8fafc'}},
+                    title = {'text': str(row['Planta']), 'font': {'size': 18, 'color': '#f8fafc'}},
                     delta = {'reference': opt, 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
                     number = {'font': {'color': '#f8fafc'}, 'valueformat': ",.0f"},
                     gauge = {
@@ -425,20 +458,18 @@ if check_password():
                         'borderwidth': 2,
                         'bordercolor': "gray",
                         'steps': [
-                            {'range': [0, opt*0.8], 'color': '#451a1a'},      # Rojo oscuro (mal)
-                            {'range': [opt*0.8, opt], 'color': '#422006'},    # Naranja oscuro (cerca)
-                            {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} # Verde oscuro (superado)
+                            {'range': [0, opt*0.8], 'color': '#451a1a'},      
+                            {'range': [opt*0.8, opt], 'color': '#422006'},    
+                            {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
                         ],
-                        'threshold': {
-                            'line': {'color': "white", 'width': 4},
-                            'thickness': 0.75,
-                            'value': opt
-                        }
+                        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': opt}
                     }
                 ))
-                fig_gauge.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"}, height=350)
+                # Márgenes arreglados para que se vean bien
+                fig_gauge.update_layout(margin=dict(t=50, b=20, l=20, r=20), height=300, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
                 
-                with cols_velocimetros[i]:
+                # Asignar a la columna correspondiente haciendo "wrap" si hay más de 3 plantas
+                with cols_velocimetros[i % num_cols]:
                     st.plotly_chart(fig_gauge, use_container_width=True)
                     
         else: st.info(f"Faltan datos eléctricos para calcular rendimientos de: {planta_activa}")
