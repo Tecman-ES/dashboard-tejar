@@ -154,7 +154,6 @@ def format_kpi_number(num):
     except: return "0"
 
 def get_delta_html(real, target):
-    """Calcula la desviación y devuelve HTML con colores (Deltas)"""
     if not target or target == 0 or pd.isna(target):
         return "<div class='kpi-delta delta-neutral'>Sin objetivo definido</div>"
     
@@ -388,7 +387,7 @@ if check_password():
                     </div>
                     """, unsafe_allow_html=True)
                 with c4:
-                    # ICONO CAMBIADO A ALAMBIQUE/MATRAZ (⚗️)
+                    # ICONO ALAMBIQUE/MATRAZ (⚗️)
                     st.markdown(f"""
                     <div class="kpi-card orange">
                         <div class="kpi-icon">⚗️</div>
@@ -526,39 +525,53 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD ---
+    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS REDONDOS RESTAURADOS) ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-            st.write("*(Los gráficos de bala muestran la producción en azul y tu objetivo como una línea blanca vertical)*")
+            st.write("*(Los velocímetros muestran la producción en azul y la línea oscura marca el objetivo estratégico)*")
             
-            for i, row in df_elec.iterrows():
-                gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
-                opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
+            # Convertimos los datos a diccionario para poder agruparlos en filas de 3
+            plantas_records = df_elec.to_dict('records')
+            
+            # Bucle para crear una cuadrícula estricta de 3 columnas máximo por fila
+            for i in range(0, len(plantas_records), 3):
+                cols_velocimetros = st.columns(3)
                 
-                fig_bullet = go.Figure(go.Indicator(
-                    mode = "number+gauge+delta",
-                    value = gen,
-                    domain = {'x': [0.25, 1], 'y': [0.1, 0.9]},
-                    title = {'text': str(row['Planta']), 'font': {'size': 18, 'color': '#f8fafc'}},
-                    delta = {'reference': opt, 'position': "top", 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
-                    number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
-                    gauge = {
-                        'shape': "bullet",
-                        'axis': {'range': [None, max(opt, gen) * 1.2], 'tickcolor': "white", 'tickfont': {'color': 'white'}},
-                        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': opt},
-                        'bar': {'color': "#3b82f6"},
-                        'bgcolor': "rgba(0,0,0,0)",
-                        'steps': [
-                            {'range': [0, opt*0.8], 'color': '#451a1a'},      
-                            {'range': [opt*0.8, opt], 'color': '#422006'},    
-                            {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
-                        ]
-                    }
-                ))
-                fig_bullet.update_layout(margin=dict(t=30, b=20, l=10, r=30), height=140, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
-                st.plotly_chart(fig_bullet, use_container_width=True)
+                for j in range(3):
+                    if i + j < len(plantas_records):
+                        row = plantas_records[i + j]
+                        gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
+                        opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
+                        
+                        fig_gauge = go.Figure(go.Indicator(
+                            mode = "gauge+number+delta",
+                            value = gen,
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#1e293b'}}, # Letras oscuras
+                            delta = {'reference': opt, 'increasing': {'color': "#16a34a"}, 'decreasing': {'color': "#dc2626"}, 'valueformat': ",.0f"},
+                            number = {'font': {'size': 28, 'color': '#1e293b'}, 'valueformat': ",.0f"}, # Números oscuros
+                            gauge = {
+                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "#1e293b", 'tickfont': {'color': '#1e293b'}},
+                                'bar': {'color': "#3b82f6", 'thickness': 0.7}, # Barra azul
+                                'bgcolor': "rgba(0,0,0,0)",
+                                'borderwidth': 1,
+                                'bordercolor': "#cbd5e1",
+                                'steps': [
+                                    {'range': [0, opt*0.8], 'color': '#fee2e2'},      # Rojo pastel 
+                                    {'range': [opt*0.8, opt], 'color': '#fef08a'},    # Amarillo pastel
+                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#dcfce3'} # Verde pastel
+                                ],
+                                'threshold': {'line': {'color': "#0f172a", 'width': 4}, 'thickness': 0.85, 'value': opt}
+                            }
+                        ))
+                        
+                        # Ajuste de márgenes para que respiren en forma redonda
+                        fig_gauge.update_layout(margin=dict(t=60, b=20, l=20, r=20), height=320, paper_bgcolor="rgba(0,0,0,0)")
+                        
+                        with cols_velocimetros[j]:
+                            st.plotly_chart(fig_gauge, use_container_width=True)
                 
         else: st.info(f"Faltan datos eléctricos para calcular rendimientos de: {planta_activa}")
         
