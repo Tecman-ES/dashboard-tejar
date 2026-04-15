@@ -55,16 +55,14 @@ def check_password():
         return False
     return True
 
-# --- FUNCIONES DE MEMORIA (GUARDADO EN SERVIDOR) ---
+# --- FUNCIONES DE MEMORIA (EXCEL) ---
 def save_file_to_disk(uploaded_file):
-    """Guarda el archivo subido en el servidor para que el presidente lo vea luego"""
     with open("ultimo_parte.dat", "wb") as f:
         f.write(uploaded_file.getvalue())
     with open("ultimo_parte_name.txt", "w") as f:
         f.write(uploaded_file.name)
 
 def load_file_from_disk():
-    """Recupera el último archivo que subió la oficinista"""
     if os.path.exists("ultimo_parte.dat") and os.path.exists("ultimo_parte_name.txt"):
         with open("ultimo_parte_name.txt", "r") as f:
             name = f.read().strip()
@@ -87,14 +85,56 @@ def load_date_from_disk():
         except: pass
     return date(2026, 4, 14)
 
-# --- FUNCIONES DE FORMATO Y LIMPIEZA ---
-def format_df_numbers(df):
-    styled_df = df.copy()
-    for col in styled_df.columns:
-        if pd.api.types.is_numeric_dtype(styled_df[col]):
-            if styled_df[col].mean() > 100:
-                styled_df[col] = styled_df[col].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "")
-    return styled_df
+# --- SISTEMA DE OBJETIVOS (NUEVO) ---
+def load_objectives():
+    if os.path.exists("objetivos_tejar.csv"):
+        return pd.read_csv("objetivos_tejar.csv")
+    else:
+        # Objetivos por defecto si es la primera vez
+        return pd.DataFrame({
+            "Area": ["Centrifugacion", "Centrifugacion", "Centrifugacion", "Secado", "Secado", "Secado", "Secado", "Secado", "Extraccion", "Extraccion", "Electricidad", "Electricidad", "Electricidad"],
+            "Planta": ["Marchena", "Cabra", "Baena", "Palenciana", "Marchena", "Cabra", "Baena", "Espejo", "El Tejar", "Baena", "Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"],
+            "Metrica": ["Aceite (kg)", "Aceite (kg)", "Aceite (kg)", "OGS (kg)", "OGS (kg)", "OGS (kg)", "OGS (kg)", "OGS (kg)", "Aceite (kg)", "Aceite (kg)", "Energia (kWh)", "Energia (kWh)", "Energia (kWh)"],
+            "Objetivo_Diario": [5251, 442, 1906, 148900, 272720, 288560, 313160, 181020, 43400, 18900, 223608, 416169, 105737]
+        })
+
+def save_objectives(df):
+    df.to_csv("objetivos_tejar.csv", index=False)
+
+def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
+    """Inyecta los objetivos estratégicos en los datos diarios de la oficina"""
+    def merge_obj(df, join_col, area_name, obj_col_name):
+        if df.empty or join_col not in df.columns: return df
+        sub_obj = df_obj[df_obj["Area"] == area_name][["Planta", "Objetivo_Diario"]]
+        sub_obj = sub_obj.rename(columns={"Planta": join_col, "Objetivo_Diario": obj_col_name})
+        if obj_col_name in df.columns:
+            df = df.drop(columns=[obj_col_name])
+        return pd.merge(df, sub_obj, on=join_col, how="left")
+
+    df_cent = merge_obj(df_cent, "Centro", "Centrifugacion", "Optimo")
+    df_secado = merge_obj(df_secado, "Centro", "Secado", "Obj_OGS")
+    df_ext = merge_obj(df_ext, "Extractora", "Extraccion", "Obj_Aceite")
+    df_elec = merge_obj(df_elec, "Planta", "Electricidad", "Optimo_kWh")
+    return df_cent, df_secado, df_ext, df_elec
+
+# --- FUNCIONES DE LIMPIEZA Y COLOR (MEJORAS UX) ---
+def display_styled_table(df, area=""):
+    """Dibuja la tabla con colores automáticos (Semaforización) y números limpios"""
+    if df.empty: return
+    df_clean = df.dropna(axis=1, how='all')
+    
+    if area == "Centrifugacion":
+        def highlight(row):
+            styles = [''] * len(row)
+            if 'Acidez' in df.columns:
+                val = row['Acidez']
+                # Si acidez pasa de 3, pintar fondo rojo
+                if pd.notnull(val) and isinstance(val, (int, float)) and val > 3:
+                    styles[df.columns.get_loc('Acidez')] = 'background-color: rgba(239, 68, 68, 0.4); color: white;'
+            return styles
+        st.dataframe(df_clean.style.apply(highlight, axis=1).format(thousands=","), hide_index=True, use_container_width=True)
+    else:
+        st.dataframe(df_clean.style.format(thousands=","), hide_index=True, use_container_width=True)
 
 def fix_number(x):
     if pd.isna(x): return x
@@ -144,8 +184,7 @@ def extract_table(df_raw, marker):
                 df_sub[col] = s_num
                 
         return df_sub
-    except Exception as e:
-        st.warning(f"Error procesando {marker}: {e}")
+    except:
         return pd.DataFrame()
 
 def load_data(uploaded_file):
@@ -157,10 +196,8 @@ def load_data(uploaded_file):
                 sep = ','
                 first_line = content.split('\n')[0] if content else ''
                 if first_line.count(';') > first_line.count(','): sep = ';'
-                
                 reader = csv.reader(io.StringIO(content), delimiter=sep)
-                data = list(reader)
-                df_raw = pd.DataFrame(data).fillna('')
+                df_raw = pd.DataFrame(list(reader)).fillna('')
             else:
                 df_raw = pd.read_excel(uploaded_file, header=None, dtype=str).fillna('')
             
@@ -172,16 +209,15 @@ def load_data(uploaded_file):
             df_elec = extract_table(df_raw, "# ELECTRICIDAD")
             
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
-        except Exception as e:
-            st.error(f"Error grave: {e}")
+        except: pass
             
-    # DATOS DE DEMOSTRACIÓN
+    # DATOS DEMO
     df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
-    df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Optimo": [5251, 442, 1906], "Acidez": [2.92, 11.15, 7.81]})
-    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298], "Obj_OGS": [148900, 272720, 288560, 313160, 181020]})
-    df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena"], "OGS_Procesado": [570400, 110000], "Salida_Orujillo": [443740, 101700], "Aceite_Prod": [31800, 8300], "Obj_Aceite": [43400, 18900]})
-    df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229], "Optimo_kWh": [223608, 416169, 105737]})
+    df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Acidez": [2.92, 11.15, 7.81]})
+    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298]})
+    df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena"], "OGS_Procesado": [570400, 110000], "Salida_Orujillo": [443740, 101700], "Aceite_Prod": [31800, 8300]})
+    df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229]})
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
 # --- APLICACIÓN PRINCIPAL ---
@@ -215,24 +251,26 @@ if check_password():
                     save_file_to_disk(archivo_subido)
                     st.success("✅ Archivo guardado correctamente en la base de datos.")
     
-    # --- LECTURA DE LOS DATOS GUARDADOS ---
-    # El presidente (o la oficinista) siempre lee el archivo que esté guardado en el disco
+    # --- LECTURA DE LOS DATOS Y OBJETIVOS ---
     fecha_reporte = load_date_from_disk()
     archivo_compartido = load_file_from_disk()
     
-    # Si no hay archivo, avisamos. Si lo hay, lo cargamos.
     if archivo_compartido is None and role == "presidente":
         st.warning("⚠️ Aún no se ha subido el parte diario de hoy. Mostrando datos de prueba.")
         
     df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
+    df_obj = load_objectives()
+    
+    # INYECTAR LOS OBJETIVOS A LAS TABLAS DE LA OFICINA
+    df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
     
     st.markdown(f"**Fecha de reporte activo:** {fecha_reporte.strftime('%d de %B de %Y')}")
     st.markdown("---")
 
-    # --- RESTO DEL DASHBOARD (VISIBLE PARA AMBOS) ---
-    tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad"])
+    # --- PESTAÑAS ---
+    tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
-    # --- PESTAÑA 1: VISIÓN GENERAL ---
+    # --- PESTAÑA 1: VISIÓN GENERAL Y ALERTAS INTELIGENTES ---
     with tabs[0]:
         col_resumen, col_noticias = st.columns([2, 1])
         with col_resumen:
@@ -249,8 +287,28 @@ if check_password():
             c3.metric("Aceite Obtenido Total", f"{total_aceite:,.0f} kg")
             
             st.write("<br>", unsafe_allow_html=True)
-            st.warning("⚠️ **Centrifugación Cabra:** Revisar acidez en los rendimientos.")
-            st.info("ℹ️ **Secado:** Analizar paradas en Pedro Abad y Bogarre.")
+            st.write("### 🤖 Análisis Operativo IA")
+            
+            # --- MOTOR DE ALERTAS INTELIGENTES ---
+            alertas = []
+            if not df_cent.empty and 'Acidez' in df_cent.columns:
+                for _, row in df_cent.iterrows():
+                    val_acidez = row['Acidez']
+                    if pd.notnull(val_acidez) and isinstance(val_acidez, (int, float)) and val_acidez > 3:
+                        alertas.append(f"⚠️ **Centrifugación {row.get('Centro', '')}:** Acidez crítica detectada ({val_acidez}%)")
+            
+            if not df_elec.empty and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
+                for _, row in df_elec.iterrows():
+                    val_gen, val_opt = row['Generada_kWh'], row['Optimo_kWh']
+                    if pd.notnull(val_gen) and pd.notnull(val_opt) and val_gen > val_opt:
+                        alertas.append(f"✅ **Electricidad {row.get('Planta', '')}:** Rendimiento supera el objetivo estratégico.")
+
+            if not alertas:
+                st.success("✅ **Operaciones Normales:** Todos los parámetros se encuentran dentro de los límites esperados hoy.")
+            else:
+                for a in alertas:
+                    if "⚠️" in a: st.error(a)
+                    else: st.success(a)
 
         with col_noticias:
             st.subheader("📰 Actualidad del Sector")
@@ -270,15 +328,11 @@ if check_password():
             fig_aport.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8d6e63')
             fig_aport.update_layout(yaxis=dict(tickformat=","))
             st.plotly_chart(fig_aport, use_container_width=True)
-        else: st.info("Faltan datos de Aportaciones en tu archivo.")
             
-        st.write("### Tabla General de Aportaciones y Acumulados")
-        if not df_aport.empty:
-            st.dataframe(format_df_numbers(df_aport), hide_index=True, use_container_width=True)
-
+        st.write("### Tabla General de Aportaciones")
+        display_styled_table(df_aport)
         st.write("### Existencias Estratégicas")
-        if not df_existencias.empty:
-            st.dataframe(format_df_numbers(df_existencias), hide_index=True, use_container_width=True)
+        display_styled_table(df_existencias)
 
     # --- PESTAÑA 3: CENTRIFUGACIÓN ---
     with tabs[2]:
@@ -287,15 +341,14 @@ if check_password():
             fig_cent_comp = go.Figure()
             fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Aceite_Prod'], name='Producido', marker_color='#fbbf24', text=df_cent['Aceite_Prod'], texttemplate='%{text:,.0f}'))
             if 'Optimo' in df_cent.columns:
-                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
+                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo (Mis Objetivos)', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
             fig_cent_comp.update_layout(barmode='group', yaxis=dict(tickformat=","))
             st.plotly_chart(fig_cent_comp, use_container_width=True)
-        else: st.info("Faltan datos de Centrifugación en tu archivo.")
         
         st.markdown("---")
-        st.write("### Métricas Detalladas (Tabla Completa)")
-        if not df_cent.empty:
-            st.dataframe(format_df_numbers(df_cent), hide_index=True, use_container_width=True)
+        st.write("### Métricas Detalladas (Semaforización Activa)")
+        st.write("*(Si la acidez pasa de 3, se marcará en rojo automáticamente)*")
+        display_styled_table(df_cent, "Centrifugacion")
 
     # --- PESTAÑA 4: SECADO ---
     with tabs[3]:
@@ -304,15 +357,13 @@ if check_password():
             fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
             fig_ogs.update_layout(yaxis=dict(tickformat=","))
             st.plotly_chart(fig_ogs, use_container_width=True)
-        else: st.info("Faltan datos de Secado en tu archivo.")
     
         total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
         st.metric("Total Secado Generado", f"{total_ogs:,.0f} kg")
         
         st.markdown("---")
         st.write("### Datos Completos de Secado")
-        if not df_secado.empty:
-            st.dataframe(format_df_numbers(df_secado), hide_index=True, use_container_width=True)
+        display_styled_table(df_secado)
 
     # --- PESTAÑA 5: EXTRACCIÓN ---
     with tabs[4]:
@@ -333,8 +384,7 @@ if check_password():
                 
         st.markdown("---")
         st.write("### Tabla de Extracción")
-        if not df_ext.empty:
-            st.dataframe(format_df_numbers(df_ext), hide_index=True, use_container_width=True)
+        display_styled_table(df_ext)
 
     # --- PESTAÑA 6: ELECTRICIDAD ---
     with tabs[5]:
@@ -343,11 +393,27 @@ if check_password():
             fig_kwh = px.bar(df_elec, x="Planta", y=["Generada_kWh", "Optimo_kWh"] if 'Optimo_kWh' in df_elec.columns else "Generada_kWh", barmode="group", color_discrete_sequence=['#3b82f6', '#93c5fd'])
             fig_kwh.update_layout(yaxis=dict(tickformat=","))
             st.plotly_chart(fig_kwh, use_container_width=True)
-        else: st.info("Faltan datos eléctricos en tu archivo.")
         
         st.metric("Total Generado Hoy", f"{total_elec:,.0f} kWh")
         
         st.markdown("---")
         st.write("### Tabla de Electricidad")
-        if not df_elec.empty:
-            st.dataframe(format_df_numbers(df_elec), hide_index=True, use_container_width=True)
+        display_styled_table(df_elec)
+
+    # --- PESTAÑA 7: CONFIGURACIÓN DE OBJETIVOS (SOLO LECTURA PARA OFICINA, EDITABLE PARA PRESIDENCIA) ---
+    with tabs[6]:
+        st.subheader("🎯 Configuración Estratégica de Objetivos")
+        st.info("Estos son los objetivos que se inyectan automáticamente en los gráficos, sin importar el Excel de la oficina.")
+        
+        if role == "presidente":
+            st.write("Haz doble clic en la columna **'Objetivo_Diario'** para modificarlos y pulsa en Guardar.")
+            # Editor interactivo
+            edited_obj = st.data_editor(df_obj, num_rows="dynamic", use_container_width=True, hide_index=True)
+            
+            if st.button("💾 Guardar y Aplicar Nuevos Objetivos", type="primary"):
+                save_objectives(edited_obj)
+                st.success("¡Objetivos actualizados! Recargando gráficas...")
+                st.rerun()
+        else:
+            st.write("*(Modo solo lectura. Solo Presidencia puede editar los objetivos).*")
+            st.dataframe(df_obj.style.format(thousands=","), hide_index=True, use_container_width=True)
