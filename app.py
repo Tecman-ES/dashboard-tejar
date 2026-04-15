@@ -115,8 +115,12 @@ def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
     df_elec = merge_obj(df_elec, "Planta", "Electricidad", "Optimo_kWh")
     return df_cent, df_secado, df_ext, df_elec
 
-# --- FUNCIONES DE LIMPIEZA Y COLOR ---
-def display_styled_table(df, area=""):
+# --- FUNCIONES DE LIMPIEZA Y DESCARGA ---
+@st.cache_data
+def convert_df(df):
+    return df.to_csv(index=False).encode('utf-8')
+
+def display_styled_table(df, area="", download_name="datos.csv"):
     if df.empty: return
     df_clean = df.dropna(axis=1, how='all')
     
@@ -131,6 +135,9 @@ def display_styled_table(df, area=""):
         st.dataframe(df_clean.style.apply(highlight, axis=1).format(thousands=","), hide_index=True, use_container_width=True)
     else:
         st.dataframe(df_clean.style.format(thousands=","), hide_index=True, use_container_width=True)
+        
+    csv_data = convert_df(df_clean)
+    st.download_button(label="📥 Descargar datos a Excel/CSV", data=csv_data, file_name=download_name, mime='text/csv')
 
 def fix_number(x):
     if pd.isna(x): return x
@@ -206,7 +213,6 @@ def load_data(uploaded_file):
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
         except: pass
             
-    # DATOS DEMO
     df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780], "Acum. Mensual": [10362240, 0, 9152660, 173220, 3579480, 2918540, 0, 2281940]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
     df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Acidez": [2.92, 11.15, 7.81]})
@@ -215,7 +221,6 @@ def load_data(uploaded_file):
     df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229]})
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
-# --- FILTRO GLOBAL POR PLANTA ---
 def filter_dataframe(df, column_name, planta_seleccionada):
     if df.empty or planta_seleccionada == "Todas" or column_name not in df.columns:
         return df
@@ -236,7 +241,7 @@ if check_password():
             st.rerun()
     
     if role == "oficina":
-        st.info("👋 **Modo Oficina:** Selecciona la fecha y sube el parte diario. Se guardará automáticamente.")
+        st.info("👋 **Modo Oficina:** Selecciona la fecha y sube el parte diario.")
         with st.container():
             col_fecha, col_archivo = st.columns([1, 2])
             with col_fecha:
@@ -259,7 +264,6 @@ if check_password():
     
     df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
     
-    # --- INTERFAZ: FILTRO GLOBAL ---
     st.markdown("---")
     col_date, col_filter = st.columns([1, 2])
     with col_date:
@@ -274,7 +278,6 @@ if check_password():
     df_ext = filter_dataframe(df_ext, "Extractora", planta_activa)
     df_elec = filter_dataframe(df_elec, "Planta", planta_activa)
 
-    # --- PESTAÑAS ---
     tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
     # --- PESTAÑA 1: VISIÓN GENERAL ---
@@ -282,7 +285,6 @@ if check_password():
         col_resumen, col_noticias = st.columns([2, 1])
         with col_resumen:
             st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
-            # SEPARACIÓN DE ACEITES (Mejora solicitada: 4 columnas)
             c1, c2, c3, c4 = st.columns(4)
             
             total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
@@ -320,7 +322,6 @@ if check_password():
 
         with col_noticias:
             st.subheader("📰 Actualidad del Sector")
-            # SEGUNDA NOTICIA AÑADIDA
             st.markdown("""
             <div class="news-card">
                 <div class="news-title">El precio del AOVE se estabiliza en origen</div>
@@ -337,10 +338,9 @@ if check_password():
             </div>
             """, unsafe_allow_html=True)
 
-    # --- PESTAÑA 2: APORTACIONES (Añadido Acumulado Mensual) ---
+    # --- PESTAÑA 2: APORTACIONES ---
     with tabs[1]:
         col_hoy, col_mes = st.columns(2)
-        
         with col_hoy:
             st.subheader("Orujo Aportado Hoy (kg)")
             if not df_aport.empty and 'Planta' in df_aport.columns and 'Hoy (kg)' in df_aport.columns:
@@ -359,14 +359,14 @@ if check_password():
                 st.plotly_chart(fig_aport_mes, use_container_width=True)
             else: st.info("Faltan datos de Acumulado Mensual.")
             
-        st.write("### Tabla General de Aportaciones")
-        display_styled_table(df_aport)
-        
+        with st.expander("📊 Ver tabla de datos detallada (Aportaciones)"):
+            display_styled_table(df_aport, download_name="aportaciones_tejar.csv")
+            
         if planta_activa == "Todas":
-            st.write("### Existencias Estratégicas Totales")
-            display_styled_table(df_existencias)
+            with st.expander("📊 Ver tabla de datos detallada (Existencias)"):
+                display_styled_table(df_existencias, download_name="existencias_tejar.csv")
 
-    # --- PESTAÑA 3: CENTRIFUGACIÓN (Añadida Gráfica de Entradas) ---
+    # --- PESTAÑA 3: CENTRIFUGACIÓN ---
     with tabs[2]:
         col1, col2 = st.columns(2)
         with col1:
@@ -389,9 +389,8 @@ if check_password():
                 st.plotly_chart(fig_cent_comp, use_container_width=True)
             else: st.info("Faltan datos de Aceite Producido.")
         
-        st.markdown("---")
-        st.write("### Métricas Detalladas (Semaforización Activa)")
-        display_styled_table(df_cent, "Centrifugacion")
+        with st.expander("📊 Ver tabla de datos detallada (Semaforización Activa)"):
+            display_styled_table(df_cent, "Centrifugacion", download_name="centrifugacion_tejar.csv")
 
     # --- PESTAÑA 4: SECADO ---
     with tabs[3]:
@@ -405,15 +404,14 @@ if check_password():
         total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
         st.metric("Total Secado Generado", f"{total_ogs:,.0f} kg")
         
-        st.markdown("---")
-        st.write("### Datos Completos de Secado")
-        display_styled_table(df_secado)
+        with st.expander("📊 Ver tabla de datos detallada"):
+            display_styled_table(df_secado, download_name="secado_tejar.csv")
 
     # --- PESTAÑA 5: EXTRACCIÓN ---
     with tabs[4]:
         col_izq, col_der = st.columns(2)
         with col_izq:
-            st.write("### Balance de Masas: OGS vs Orujillo (kg)")
+            st.subheader("Balance de Masas: OGS vs Orujillo (kg)")
             if not df_ext.empty and 'Extractora' in df_ext.columns and 'OGS_Procesado' in df_ext.columns:
                 fig_bal = px.bar(df_ext, x="Extractora", y=["OGS_Procesado", "Salida_Orujillo"] if 'Salida_Orujillo' in df_ext.columns else "OGS_Procesado", barmode="group", color_discrete_sequence=['#84cc16', '#4d7c0f'])
                 fig_bal.update_layout(yaxis=dict(tickformat=","))
@@ -421,63 +419,59 @@ if check_password():
             else: st.info(f"Sin datos de balance para: {planta_activa}")
             
         with col_der:
-            st.write("### Producción de Aceite vs Objetivo (kg)")
+            st.subheader("Producción de Aceite vs Objetivo (kg)")
             if not df_ext.empty and 'Aceite_Prod' in df_ext.columns:
                 fig_aceite = px.bar(df_ext, x="Extractora", y=["Aceite_Prod", "Obj_Aceite"] if 'Obj_Aceite' in df_ext.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
                 fig_aceite.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_aceite, use_container_width=True)
                 
-        st.markdown("---")
-        st.write("### Tabla de Extracción")
-        display_styled_table(df_ext)
+        with st.expander("📊 Ver tabla de datos detallada"):
+            display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS MEJORADOS) ---
+    # --- PESTAÑA 6: ELECTRICIDAD (NUEVOS GRÁFICOS DE BALA) ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-            # Dividir en un máximo de 3 columnas por fila para evitar que se aplasten
-            num_cols = min(len(df_elec), 3)
-            cols_velocimetros = st.columns(num_cols)
+            st.write("*(Los gráficos de bala muestran la producción en azul y tu objetivo como una línea blanca vertical)*")
             
             for i, row in df_elec.iterrows():
                 gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
                 opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
                 
-                fig_gauge = go.Figure(go.Indicator(
-                    mode = "gauge+number+delta",
+                fig_bullet = go.Figure(go.Indicator(
+                    mode = "number+gauge+delta",
                     value = gen,
-                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    domain = {'x': [0.25, 1], 'y': [0.1, 0.9]}, # Espacio lateral izquierdo reservado para el título
                     title = {'text': str(row['Planta']), 'font': {'size': 18, 'color': '#f8fafc'}},
-                    delta = {'reference': opt, 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
-                    number = {'font': {'color': '#f8fafc'}, 'valueformat': ",.0f"},
+                    delta = {'reference': opt, 'position': "top", 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
+                    number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
                     gauge = {
-                        'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "white", 'tickformat': ",.0f"},
+                        'shape': "bullet",
+                        'axis': {'range': [None, max(opt, gen) * 1.2], 'tickcolor': "white", 'tickfont': {'color': 'white'}},
+                        'threshold': {
+                            'line': {'color': "white", 'width': 4},
+                            'thickness': 0.75,
+                            'value': opt
+                        },
                         'bar': {'color': "#3b82f6"},
                         'bgcolor': "rgba(0,0,0,0)",
-                        'borderwidth': 2,
-                        'bordercolor': "gray",
                         'steps': [
                             {'range': [0, opt*0.8], 'color': '#451a1a'},      
                             {'range': [opt*0.8, opt], 'color': '#422006'},    
                             {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
-                        ],
-                        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': opt}
+                        ]
                     }
                 ))
-                # Márgenes arreglados para que se vean bien
-                fig_gauge.update_layout(margin=dict(t=50, b=20, l=20, r=20), height=300, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                fig_bullet.update_layout(margin=dict(t=30, b=20, l=10, r=30), height=140, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                st.plotly_chart(fig_bullet, use_container_width=True)
                 
-                # Asignar a la columna correspondiente haciendo "wrap" si hay más de 3 plantas
-                with cols_velocimetros[i % num_cols]:
-                    st.plotly_chart(fig_gauge, use_container_width=True)
-                    
         else: st.info(f"Faltan datos eléctricos para calcular rendimientos de: {planta_activa}")
         
         st.metric("Total Generado Hoy", f"{total_elec:,.0f} kWh")
-        st.markdown("---")
-        st.write("### Tabla de Electricidad")
-        display_styled_table(df_elec)
+        
+        with st.expander("📊 Ver tabla de datos detallada"):
+            display_styled_table(df_elec, download_name="electricidad_tejar.csv")
 
     # --- PESTAÑA 7: CONFIGURACIÓN DE OBJETIVOS ---
     with tabs[6]:
