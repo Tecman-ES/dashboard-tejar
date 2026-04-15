@@ -85,12 +85,11 @@ def load_date_from_disk():
         except: pass
     return date(2026, 4, 14)
 
-# --- SISTEMA DE OBJETIVOS (NUEVO) ---
+# --- SISTEMA DE OBJETIVOS ---
 def load_objectives():
     if os.path.exists("objetivos_tejar.csv"):
         return pd.read_csv("objetivos_tejar.csv")
     else:
-        # Objetivos por defecto si es la primera vez
         return pd.DataFrame({
             "Area": ["Centrifugacion", "Centrifugacion", "Centrifugacion", "Secado", "Secado", "Secado", "Secado", "Secado", "Extraccion", "Extraccion", "Electricidad", "Electricidad", "Electricidad"],
             "Planta": ["Marchena", "Cabra", "Baena", "Palenciana", "Marchena", "Cabra", "Baena", "Espejo", "El Tejar", "Baena", "Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"],
@@ -102,7 +101,6 @@ def save_objectives(df):
     df.to_csv("objetivos_tejar.csv", index=False)
 
 def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
-    """Inyecta los objetivos estratégicos en los datos diarios de la oficina"""
     def merge_obj(df, join_col, area_name, obj_col_name):
         if df.empty or join_col not in df.columns: return df
         sub_obj = df_obj[df_obj["Area"] == area_name][["Planta", "Objetivo_Diario"]]
@@ -117,9 +115,8 @@ def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
     df_elec = merge_obj(df_elec, "Planta", "Electricidad", "Optimo_kWh")
     return df_cent, df_secado, df_ext, df_elec
 
-# --- FUNCIONES DE LIMPIEZA Y COLOR (MEJORAS UX) ---
+# --- FUNCIONES DE LIMPIEZA Y COLOR ---
 def display_styled_table(df, area=""):
-    """Dibuja la tabla con colores automáticos (Semaforización) y números limpios"""
     if df.empty: return
     df_clean = df.dropna(axis=1, how='all')
     
@@ -128,7 +125,6 @@ def display_styled_table(df, area=""):
             styles = [''] * len(row)
             if 'Acidez' in df.columns:
                 val = row['Acidez']
-                # Si acidez pasa de 3, pintar fondo rojo
                 if pd.notnull(val) and isinstance(val, (int, float)) and val > 3:
                     styles[df.columns.get_loc('Acidez')] = 'background-color: rgba(239, 68, 68, 0.4); color: white;'
             return styles
@@ -150,7 +146,6 @@ def fix_number(x):
             elif ',' in x: x = x.replace(',', '.')
     return x
 
-# --- CARGA ANTI-FALLOS ---
 def extract_table(df_raw, marker):
     try:
         col0 = df_raw.iloc[:, 0].astype(str).str.strip()
@@ -220,12 +215,17 @@ def load_data(uploaded_file):
     df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229]})
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
+# --- FILTRO GLOBAL POR PLANTA ---
+def filter_dataframe(df, column_name, planta_seleccionada):
+    if df.empty or planta_seleccionada == "Todas" or column_name not in df.columns:
+        return df
+    # Filtrar buscando que el nombre de la planta contenga el texto seleccionado (ej. Baena filtra Baena 25MW)
+    return df[df[column_name].astype(str).str.contains(planta_seleccionada, case=False, na=False)].reset_index(drop=True)
+
 # --- APLICACIÓN PRINCIPAL ---
 if check_password():
-    
     role = st.session_state["role"]
     
-    # --- ENCABEZADO Y CERRAR SESIÓN ---
     col_titulo, col_logout = st.columns([10, 1])
     with col_titulo:
         st.title("📊 Panel Operativo - Oleícola El Tejar SCA")
@@ -236,9 +236,8 @@ if check_password():
             st.session_state["role"] = None
             st.rerun()
     
-    # --- ÁREA DE CARGA DE DATOS (SOLO PARA OFICINA) ---
     if role == "oficina":
-        st.info("👋 **Modo Oficina:** Selecciona la fecha y sube el parte diario. Se guardará automáticamente para el Presidente.")
+        st.info("👋 **Modo Oficina:** Selecciona la fecha y sube el parte diario. Se guardará automáticamente.")
         with st.container():
             col_fecha, col_archivo = st.columns([1, 2])
             with col_fecha:
@@ -251,30 +250,40 @@ if check_password():
                     save_file_to_disk(archivo_subido)
                     st.success("✅ Archivo guardado correctamente en la base de datos.")
     
-    # --- LECTURA DE LOS DATOS Y OBJETIVOS ---
     fecha_reporte = load_date_from_disk()
     archivo_compartido = load_file_from_disk()
-    
     if archivo_compartido is None and role == "presidente":
         st.warning("⚠️ Aún no se ha subido el parte diario de hoy. Mostrando datos de prueba.")
         
     df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
     df_obj = load_objectives()
     
-    # INYECTAR LOS OBJETIVOS A LAS TABLAS DE LA OFICINA
     df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
     
-    st.markdown(f"**Fecha de reporte activo:** {fecha_reporte.strftime('%d de %B de %Y')}")
+    # --- INTERFAZ: FILTRO GLOBAL (MEJORA #2) ---
     st.markdown("---")
+    col_date, col_filter = st.columns([1, 2])
+    with col_date:
+        st.markdown(f"**Fecha de reporte activo:** {fecha_reporte.strftime('%d de %B de %Y')}")
+    with col_filter:
+        plantas_disponibles = ["Todas", "Baena", "Cabra", "Marchena", "Palenciana", "Pedro Abad", "Espejo", "Bogarre", "Mancha Real", "Algodonales", "Vetejar", "El Tejar"]
+        planta_activa = st.selectbox("📍 Filtro Global por Planta/Centro:", plantas_disponibles)
+
+    # Aplicar el filtro a todos los dataframes
+    df_aport = filter_dataframe(df_aport, "Planta", planta_activa)
+    df_cent = filter_dataframe(df_cent, "Centro", planta_activa)
+    df_secado = filter_dataframe(df_secado, "Centro", planta_activa)
+    df_ext = filter_dataframe(df_ext, "Extractora", planta_activa)
+    df_elec = filter_dataframe(df_elec, "Planta", planta_activa)
 
     # --- PESTAÑAS ---
     tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
-    # --- PESTAÑA 1: VISIÓN GENERAL Y ALERTAS INTELIGENTES ---
+    # --- PESTAÑA 1: VISIÓN GENERAL ---
     with tabs[0]:
         col_resumen, col_noticias = st.columns([2, 1])
         with col_resumen:
-            st.subheader("Resumen Ejecutivo")
+            st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
             c1, c2, c3 = st.columns(3)
             
             total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
@@ -289,7 +298,6 @@ if check_password():
             st.write("<br>", unsafe_allow_html=True)
             st.write("### 🤖 Análisis Operativo IA")
             
-            # --- MOTOR DE ALERTAS INTELIGENTES ---
             alertas = []
             if not df_cent.empty and 'Acidez' in df_cent.columns:
                 for _, row in df_cent.iterrows():
@@ -304,7 +312,7 @@ if check_password():
                         alertas.append(f"✅ **Electricidad {row.get('Planta', '')}:** Rendimiento supera el objetivo estratégico.")
 
             if not alertas:
-                st.success("✅ **Operaciones Normales:** Todos los parámetros se encuentran dentro de los límites esperados hoy.")
+                st.success(f"✅ **Operaciones Normales en {planta_activa}:** Todos los parámetros se encuentran dentro de los límites esperados hoy.")
             else:
                 for a in alertas:
                     if "⚠️" in a: st.error(a)
@@ -331,8 +339,10 @@ if check_password():
             
         st.write("### Tabla General de Aportaciones")
         display_styled_table(df_aport)
-        st.write("### Existencias Estratégicas")
-        display_styled_table(df_existencias)
+        
+        if planta_activa == "Todas":
+            st.write("### Existencias Estratégicas Totales")
+            display_styled_table(df_existencias)
 
     # --- PESTAÑA 3: CENTRIFUGACIÓN ---
     with tabs[2]:
@@ -344,10 +354,10 @@ if check_password():
                 fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo (Mis Objetivos)', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
             fig_cent_comp.update_layout(barmode='group', yaxis=dict(tickformat=","))
             st.plotly_chart(fig_cent_comp, use_container_width=True)
+        else: st.info(f"Sin datos de Centrifugación para: {planta_activa}")
         
         st.markdown("---")
         st.write("### Métricas Detalladas (Semaforización Activa)")
-        st.write("*(Si la acidez pasa de 3, se marcará en rojo automáticamente)*")
         display_styled_table(df_cent, "Centrifugacion")
 
     # --- PESTAÑA 4: SECADO ---
@@ -357,6 +367,7 @@ if check_password():
             fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
             fig_ogs.update_layout(yaxis=dict(tickformat=","))
             st.plotly_chart(fig_ogs, use_container_width=True)
+        else: st.info(f"Sin datos de Secado para: {planta_activa}")
     
         total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
         st.metric("Total Secado Generado", f"{total_ogs:,.0f} kg")
@@ -374,6 +385,7 @@ if check_password():
                 fig_bal = px.bar(df_ext, x="Extractora", y=["OGS_Procesado", "Salida_Orujillo"] if 'Salida_Orujillo' in df_ext.columns else "OGS_Procesado", barmode="group", color_discrete_sequence=['#84cc16', '#4d7c0f'])
                 fig_bal.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_bal, use_container_width=True)
+            else: st.info(f"Sin datos de balance para: {planta_activa}")
             
         with col_der:
             st.write("### Producción de Aceite vs Objetivo (kg)")
@@ -386,28 +398,63 @@ if check_password():
         st.write("### Tabla de Extracción")
         display_styled_table(df_ext)
 
-    # --- PESTAÑA 6: ELECTRICIDAD ---
+    # --- PESTAÑA 6: ELECTRICIDAD (CON VELOCÍMETROS MEJORA #3) ---
     with tabs[5]:
-        st.subheader("Producción kWh vs Objetivo Diario")
-        if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns:
-            fig_kwh = px.bar(df_elec, x="Planta", y=["Generada_kWh", "Optimo_kWh"] if 'Optimo_kWh' in df_elec.columns else "Generada_kWh", barmode="group", color_discrete_sequence=['#3b82f6', '#93c5fd'])
-            fig_kwh.update_layout(yaxis=dict(tickformat=","))
-            st.plotly_chart(fig_kwh, use_container_width=True)
+        st.subheader("Rendimiento Eléctrico Diario")
+        
+        if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
+            # Crear columnas para que los velocímetros se vean uno al lado del otro
+            cols_velocimetros = st.columns(len(df_elec))
+            
+            for i, row in df_elec.iterrows():
+                gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
+                opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 # Para evitar div 0
+                
+                # Gráfico de Velocímetro (Gauge Chart)
+                fig_gauge = go.Figure(go.Indicator(
+                    mode = "gauge+number+delta",
+                    value = gen,
+                    domain = {'x': [0, 1], 'y': [0, 1]},
+                    title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#f8fafc'}},
+                    delta = {'reference': opt, 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
+                    number = {'font': {'color': '#f8fafc'}, 'valueformat': ",.0f"},
+                    gauge = {
+                        'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "white", 'tickformat': ",.0f"},
+                        'bar': {'color': "#3b82f6"},
+                        'bgcolor': "rgba(0,0,0,0)",
+                        'borderwidth': 2,
+                        'bordercolor': "gray",
+                        'steps': [
+                            {'range': [0, opt*0.8], 'color': '#451a1a'},      # Rojo oscuro (mal)
+                            {'range': [opt*0.8, opt], 'color': '#422006'},    # Naranja oscuro (cerca)
+                            {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} # Verde oscuro (superado)
+                        ],
+                        'threshold': {
+                            'line': {'color': "white", 'width': 4},
+                            'thickness': 0.75,
+                            'value': opt
+                        }
+                    }
+                ))
+                fig_gauge.update_layout(paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"}, height=350)
+                
+                with cols_velocimetros[i]:
+                    st.plotly_chart(fig_gauge, use_container_width=True)
+                    
+        else: st.info(f"Faltan datos eléctricos para calcular rendimientos de: {planta_activa}")
         
         st.metric("Total Generado Hoy", f"{total_elec:,.0f} kWh")
-        
         st.markdown("---")
         st.write("### Tabla de Electricidad")
         display_styled_table(df_elec)
 
-    # --- PESTAÑA 7: CONFIGURACIÓN DE OBJETIVOS (SOLO LECTURA PARA OFICINA, EDITABLE PARA PRESIDENCIA) ---
+    # --- PESTAÑA 7: CONFIGURACIÓN DE OBJETIVOS ---
     with tabs[6]:
         st.subheader("🎯 Configuración Estratégica de Objetivos")
-        st.info("Estos son los objetivos que se inyectan automáticamente en los gráficos, sin importar el Excel de la oficina.")
+        st.info("Estos son los objetivos que se inyectan automáticamente en los gráficos y velocímetros.")
         
         if role == "presidente":
             st.write("Haz doble clic en la columna **'Objetivo_Diario'** para modificarlos y pulsa en Guardar.")
-            # Editor interactivo
             edited_obj = st.data_editor(df_obj, num_rows="dynamic", use_container_width=True, hide_index=True)
             
             if st.button("💾 Guardar y Aplicar Nuevos Objetivos", type="primary"):
