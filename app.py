@@ -59,6 +59,10 @@ def check_password():
     if not st.session_state["login_ok"]:
         col1, col2, col3 = st.columns([1,2,1])
         with col2:
+            if os.path.exists("Logo.png"):
+                st.image("Logo.png", width=250)
+            else:
+                st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
             st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
             usuario = st.text_input("Usuario (oficina / presidente)")
             password = st.text_input("Contraseña", type="password")
@@ -264,9 +268,14 @@ def filter_dataframe(df, column_name, planta_seleccionada):
 if check_password():
     role = st.session_state["role"]
     
-    col_titulo, col_logout = st.columns([10, 1])
+    col_logo, col_titulo, col_logout = st.columns([1, 8, 1])
+    with col_logo:
+        if os.path.exists("Logo.png"):
+            st.image("Logo.png", use_container_width=True)
+        else:
+            st.markdown("<div style='font-size: 3rem; text-align: center;'>🏭</div>", unsafe_allow_html=True)
     with col_titulo:
-        st.title("📊 Panel Operativo - Oleícola El Tejar SCA")
+        st.title("Panel Operativo - Oleícola El Tejar SCA")
     with col_logout:
         st.write("<br>", unsafe_allow_html=True)
         if st.button("🚪 Salir"):
@@ -495,34 +504,48 @@ if check_password():
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
-            st.write("*(Los gráficos de bala muestran la producción en azul y tu objetivo como una línea blanca vertical)*")
+            st.write("*(Los velocímetros muestran la producción en azul y la línea blanca marca el objetivo estratégico)*")
             
-            for i, row in df_elec.iterrows():
-                gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
-                opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
+            # Convertimos los datos a diccionario para poder agruparlos en filas de 3
+            plantas_records = df_elec.to_dict('records')
+            
+            # Bucle para crear una cuadrícula estricta de 3 columnas máximo por fila
+            for i in range(0, len(plantas_records), 3):
+                cols_velocimetros = st.columns(3)
                 
-                fig_bullet = go.Figure(go.Indicator(
-                    mode = "number+gauge+delta",
-                    value = gen,
-                    domain = {'x': [0.25, 1], 'y': [0.1, 0.9]},
-                    title = {'text': str(row['Planta']), 'font': {'size': 18, 'color': '#f8fafc'}},
-                    delta = {'reference': opt, 'position': "top", 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}},
-                    number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
-                    gauge = {
-                        'shape': "bullet",
-                        'axis': {'range': [None, max(opt, gen) * 1.2], 'tickcolor': "white", 'tickfont': {'color': 'white'}},
-                        'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.75, 'value': opt},
-                        'bar': {'color': "#3b82f6"},
-                        'bgcolor': "rgba(0,0,0,0)",
-                        'steps': [
-                            {'range': [0, opt*0.8], 'color': '#451a1a'},      
-                            {'range': [opt*0.8, opt], 'color': '#422006'},    
-                            {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
-                        ]
-                    }
-                ))
-                fig_bullet.update_layout(margin=dict(t=30, b=20, l=10, r=30), height=140, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
-                st.plotly_chart(fig_bullet, use_container_width=True)
+                for j in range(3):
+                    if i + j < len(plantas_records):
+                        row = plantas_records[i + j]
+                        gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
+                        opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
+                        
+                        fig_gauge = go.Figure(go.Indicator(
+                            mode = "gauge+number+delta",
+                            value = gen,
+                            domain = {'x': [0, 1], 'y': [0, 1]},
+                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#f8fafc'}},
+                            delta = {'reference': opt, 'increasing': {'color': "#4ade80"}, 'decreasing': {'color': "#ef4444"}, 'valueformat': ",.0f"},
+                            number = {'font': {'size': 26, 'color': '#f8fafc'}, 'valueformat': ",.0f"},
+                            gauge = {
+                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "white", 'tickformat': ",.0f"},
+                                'bar': {'color': "#3b82f6", 'thickness': 0.65}, # Barra más fina y elegante
+                                'bgcolor': "rgba(0,0,0,0)",
+                                'borderwidth': 2,
+                                'bordercolor': "#334155",
+                                'steps': [
+                                    {'range': [0, opt*0.8], 'color': '#451a1a'},      
+                                    {'range': [opt*0.8, opt], 'color': '#422006'},    
+                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#14532d'} 
+                                ],
+                                'threshold': {'line': {'color': "white", 'width': 4}, 'thickness': 0.85, 'value': opt}
+                            }
+                        ))
+                        
+                        # Aumentado el margen superior (t=75) y la altura (height=320) para que "respiren"
+                        fig_gauge.update_layout(margin=dict(t=75, b=20, l=20, r=20), height=320, paper_bgcolor="rgba(0,0,0,0)", font={'color': "white"})
+                        
+                        with cols_velocimetros[j]:
+                            st.plotly_chart(fig_gauge, use_container_width=True)
                 
         else: st.info(f"Faltan datos eléctricos para calcular rendimientos de: {planta_activa}")
         
