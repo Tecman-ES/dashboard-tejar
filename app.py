@@ -7,7 +7,7 @@ from datetime import date
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
 
-# --- ESTILOS PERSONALIZADOS (CSS) PARA NOTICIAS Y TARJETAS ---
+# --- ESTILOS PERSONALIZADOS (CSS) ---
 st.markdown("""
 <style>
     .news-card {
@@ -22,11 +22,7 @@ st.markdown("""
     .news-source { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
     .news-snippet { font-size: 0.9rem; line-height: 1.4; }
     .read-more { color: #38bdf8; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
-    
-    /* Estilo para las tablas de Streamlit (dataframe) */
-    .stDataFrame [data-testid="stTable"] {
-        font-variant-numeric: tabular-nums;
-    }
+    .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -51,23 +47,30 @@ def check_password():
 
 # --- FUNCIONES DE FORMATO ---
 def format_df_numbers(df):
-    """Formatea todas las columnas numéricas de un DataFrame para mostrar separadores de miles"""
+    """Formatea columnas numéricas para mostrar separadores de miles, ignorando errores"""
     styled_df = df.copy()
     for col in styled_df.columns:
         if pd.api.types.is_numeric_dtype(styled_df[col]):
-            # Aplicar formato solo a números enteros o flotantes grandes (no a rendimientos pequeños como 0.41)
+            # Solo formatear si la media es grande (evita formatear rendimientos como 0.41 a 0)
             if styled_df[col].mean() > 100:
-                styled_df[col] = styled_df[col].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else x)
+                styled_df[col] = styled_df[col].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "")
     return styled_df
 
-# --- CARGA DE DATOS (EXCEL O DEMO) ---
+# --- CARGA INTELIGENTE DE DATOS ---
 def extract_table(df_raw, marker):
-    """Extrae una sub-tabla de una hoja única buscando su marcador"""
+    """Extrae sub-tabla de hoja única de forma robusta frente a fallos de Excel"""
     try:
-        idx = df_raw[df_raw[0].astype(str).str.strip() == marker].index
-        if len(idx) == 0: return pd.DataFrame()
+        # 1. Limpiar la primera columna de espacios y convertir a string
+        col0 = df_raw.iloc[:, 0].astype(str).str.strip()
+        
+        # 2. Buscar usando "contains" por si hay espacios ocultos
+        idx = df_raw[col0.str.contains(marker, regex=False, na=False)].index
+        if len(idx) == 0: 
+            return pd.DataFrame()
+            
         start_idx = idx[0]
         
+        # 3. Buscar el final de la tabla
         end_idx = len(df_raw)
         for i in range(start_idx + 1, len(df_raw)):
             val = str(df_raw.iloc[i, 0]).strip()
@@ -75,18 +78,28 @@ def extract_table(df_raw, marker):
                 end_idx = i
                 break
                 
+        # 4. Recortar
         df_sub = df_raw.iloc[start_idx+1:end_idx].dropna(how='all')
-        if df_sub.empty: return pd.DataFrame()
+        if df_sub.empty: 
+            return pd.DataFrame()
         
-        df_sub.columns = df_sub.iloc[0]
+        # 5. Asignar y limpiar cabeceras
+        headers = df_sub.iloc[0].astype(str).str.strip()
+        df_sub.columns = headers
         df_sub = df_sub[1:]
         
-        df_sub = df_sub.loc[:, df_sub.columns.notna()]
+        # 6. Eliminar columnas vacías fantasma de Excel ('nan')
+        df_sub = df_sub.loc[:, ~df_sub.columns.isin(['nan', 'None', '', '<NA>'])]
+        
+        # 7. Limpiar números (quitar comas de Excel como texto) y convertir a numérico
         for col in df_sub.columns:
+            if df_sub[col].dtype == object:
+                df_sub[col] = df_sub[col].astype(str).str.replace(',', '', regex=False)
             df_sub[col] = pd.to_numeric(df_sub[col], errors='ignore')
             
         return df_sub.dropna(how='all').reset_index(drop=True)
-    except Exception:
+    except Exception as e:
+        st.sidebar.warning(f"Aviso interno en tabla {marker}: {e}")
         return pd.DataFrame()
 
 def load_data(uploaded_file):
@@ -104,14 +117,13 @@ def load_data(uploaded_file):
             df_ext = extract_table(df_raw, "# EXTRACCION")
             df_elec = extract_table(df_raw, "# ELECTRICIDAD")
             
-            st.sidebar.success("✅ Datos cargados correctamente")
+            st.sidebar.success("✅ Excel procesado correctamente")
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
         except Exception as e:
-            st.sidebar.error(f"Error al procesar el archivo. Detalle: {e}")
-            st.sidebar.warning("Cargando datos de demostración como respaldo...")
-
+            st.sidebar.error(f"Error grave leyendo archivo: {e}")
+            
     # DATOS DE DEMOSTRACIÓN (Fallback)
-    st.sidebar.info("📊 Mostrando datos de demostración.")
+    st.sidebar.info("📊 Mostrando datos de prueba.")
     
     df_aport = pd.DataFrame({
         "Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"],
@@ -121,7 +133,7 @@ def load_data(uploaded_file):
     
     df_existencias = pd.DataFrame({
         "Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"],
-        "Total Kilos": [27694950, 17150820, 57655131] # Cambiado a numérico para poder formatear
+        "Total Kilos": [27694950, 17150820, 57655131]
     })
 
     df_cent = pd.DataFrame({
@@ -161,43 +173,36 @@ def load_data(uploaded_file):
 # --- APLICACIÓN PRINCIPAL ---
 if check_password():
     
-    # --- MENÚ LATERAL (SIDEBAR) ---
     with st.sidebar:
         st.subheader("⚙️ Configuración del Reporte")
-        fecha_reporte = st.date_input("Fecha del Parte Diario", date(2026, 4, 14))
-        
+        fecha_reporte = st.date_input("Fecha del Parte", date(2026, 4, 14))
         st.markdown("---")
-        st.write("**Actualizar Datos:**")
-        archivo_subido = st.file_uploader("Sube tu Archivo (.csv o .xlsx)", type=["csv", "xlsx", "xls"])
+        archivo_subido = st.file_uploader("Sube tu Excel (.xlsx)", type=["xlsx", "xls", "csv"])
         
     df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_subido)
 
-    # --- HEADER ---
     st.title("📊 Panel Operativo - Oleícola El Tejar SCA")
     st.markdown(f"**Fecha de reporte:** {fecha_reporte.strftime('%d de %B de %Y')}")
     st.markdown("---")
 
     tabs = st.tabs([
         "👁️ Visión General", 
-        "📦 Aportaciones y Existencias", 
+        "📦 Aportaciones", 
         "🌀 Centrifugación", 
         "🔥 Secado", 
         "🗜️ Extracción", 
         "⚡ Electricidad"
     ])
 
-    # ==========================================
-    # PESTAÑA 1: VISIÓN GENERAL & NOTICIAS
-    # ==========================================
+    # --- PESTAÑA 1 ---
     with tabs[0]:
         col_resumen, col_noticias = st.columns([2, 1])
-        
         with col_resumen:
             st.subheader("Resumen Ejecutivo")
             c1, c2, c3 = st.columns(3)
             
-            total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 2299900
-            total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 870065
+            total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
+            total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
             total_aceite = (df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0) + \
                            (df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0)
             
@@ -206,10 +211,8 @@ if check_password():
             c3.metric("Aceite Obtenido Total", f"{total_aceite:,.0f} kg")
             
             st.write("<br>", unsafe_allow_html=True)
-            st.write("**Alertas de Producción:**")
-            st.warning("⚠️ **Centrifugación Cabra:** Acidez detectada del 11.15% (Rdto: 0.94%).")
-            st.info("ℹ️ **Secado:** Parada técnica reportada en plantas Pedro Abad y Bogarre.")
-            st.success("✅ **Electricidad:** Baena 25MW supera el rendimiento óptimo mensual esperado.")
+            st.warning("⚠️ **Centrifugación Cabra:** Revisar acidez en los rendimientos.")
+            st.info("ℹ️ **Secado:** Analizar paradas en Pedro Abad y Bogarre.")
 
         with col_noticias:
             st.subheader("📰 Actualidad del Sector")
@@ -217,140 +220,97 @@ if check_password():
             <div class="news-card">
                 <div class="news-title">El precio del AOVE se estabiliza en origen por encima de los 4 euros</div>
                 <div class="news-source">Fuente: OleoMerca | 14 Abr 2026</div>
-                <div class="news-snippet">
-                    Tras semanas de volatilidad debido a las previsiones de lluvia en la cuenca del Guadalquivir, el mercado de origen muestra una estabilización. Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg, dando un respiro a las extractoras...
-                </div>
-                <a href="#" class="read-more">Leer noticia completa →</a>
-            </div>
-            
-            <div class="news-card">
-                <div class="news-title">Nuevas regulaciones para la biomasa de orujillo en plantas de cogeneración</div>
-                <div class="news-source">Fuente: Revista Alcuza | 13 Abr 2026</div>
-                <div class="news-snippet">
-                    El Ministerio de Transición Ecológica prepara un borrador que afectará a los consumos térmicos de las plantas andaluzas. Se premiará con incentivos fiscales a las cooperativas que mantengan un rendimiento energético superior al 85%...
-                </div>
-                <a href="#" class="read-more">Leer noticia completa →</a>
+                <div class="news-snippet">Las operaciones en picual de alta calidad se cierran en torno a los 4,20€/kg...</div>
             </div>
             """, unsafe_allow_html=True)
 
-    # ==========================================
-    # PESTAÑA 2: APORTACIONES Y EXISTENCIAS
-    # ==========================================
+    # --- PESTAÑA 2 ---
     with tabs[1]:
-        st.subheader("Aportaciones de Socias y Acopios (Orujo)")
-        
         c1, c2 = st.columns([3, 2])
         with c1:
-            if not df_aport.empty and 'Hoy (kg)' in df_aport.columns and 'Planta' in df_aport.columns:
-                fig_aport = px.bar(df_aport, x="Planta", y="Hoy (kg)", title="Orujo Aportado Hoy (kg)")
-                # Formatear el texto de las barras para que tenga separadores de miles
+            st.write("**Orujo Aportado Hoy (kg)**")
+            if not df_aport.empty and 'Planta' in df_aport.columns and 'Hoy (kg)' in df_aport.columns:
+                fig_aport = px.bar(df_aport, x="Planta", y="Hoy (kg)")
                 fig_aport.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8d6e63')
-                # Formatear el eje Y
                 fig_aport.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_aport, use_container_width=True)
             else:
-                st.error("Falta la columna 'Hoy (kg)' o 'Planta' en la tabla Aportaciones.")
+                st.info("Sube datos para ver la gráfica de Aportaciones.")
                 
         with c2:
-            st.write("**Total de Existencias Estratégicas:**")
+            st.write("**Existencias Estratégicas:**")
             if not df_existencias.empty:
                 st.dataframe(format_df_numbers(df_existencias), hide_index=True, use_container_width=True)
-            st.metric("Total Aportado Hoy", f"{total_orujo:,.0f} kg")
 
-    # ==========================================
-    # PESTAÑA 3: CENTRIFUGACIÓN
-    # ==========================================
+    # --- PESTAÑA 3 ---
     with tabs[2]:
-        st.subheader("Rendimientos de Centrifugación")
-
         col1, col2 = st.columns(2)
         with col1:
             st.write("**Aceite Producido vs Óptimo Industrial (kg)**")
-            if not df_cent.empty and all(col in df_cent.columns for col in ['Centro', 'Aceite_Prod', 'Optimo']):
+            if not df_cent.empty and 'Centro' in df_cent.columns and 'Aceite_Prod' in df_cent.columns:
                 fig_cent_comp = go.Figure()
-                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Aceite_Prod'], name='Producido Real', marker_color='#fbbf24', text=df_cent['Aceite_Prod'], texttemplate='%{text:,.0f}', textposition='auto'))
-                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo Industrial', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}', textposition='auto'))
+                fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Aceite_Prod'], name='Producido', marker_color='#fbbf24', text=df_cent['Aceite_Prod'], texttemplate='%{text:,.0f}'))
+                if 'Optimo' in df_cent.columns:
+                    fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
                 fig_cent_comp.update_layout(barmode='group', yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_cent_comp, use_container_width=True)
+            else:
+                st.info("Faltan datos de Centrifugación.")
             
         with col2:
-            st.write("**Métricas Detalladas & Consumos**")
+            st.write("**Métricas Detalladas**")
             if not df_cent.empty:
-                cols_to_show = [col for col in ["Centro", "Entrada_Alperujo", "Rdto_Obtenido", "Media_Mensual", "Acidez"] if col in df_cent.columns]
-                st.dataframe(format_df_numbers(df_cent[cols_to_show]), hide_index=True, use_container_width=True)
-            
-            st.write("**Consumos Diarios (Centrifugación):**")
-            st.info("🔥 **Cabra:** 24,920 kg (Hueso) | **Baena:** 894 kg (Hueso)")
+                st.dataframe(format_df_numbers(df_cent), hide_index=True, use_container_width=True)
 
-    # ==========================================
-    # PESTAÑA 4: SECADO
-    # ==========================================
+    # --- PESTAÑA 4 ---
     with tabs[3]:
-        st.subheader("Líneas de Secado")
-
         c1, c2 = st.columns([2,1])
         with c1:
-            st.write("**Orujo Graso Seco (OGS) - Salida vs Objetivo Diario (kg)**")
-            if not df_secado.empty and all(col in df_secado.columns for col in ["Centro", "OGS_Salida", "Obj_OGS"]):
-                fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"], barmode="group",
-                                 labels={"value": "Kilos OGS", "variable": "Indicador"}, color_discrete_sequence=['#d97706', '#fcd34d'])
+            st.write("**Orujo Graso Seco (OGS) - Salida vs Objetivo (kg)**")
+            if not df_secado.empty and 'Centro' in df_secado.columns and 'OGS_Salida' in df_secado.columns:
+                fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
                 fig_ogs.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_ogs, use_container_width=True)
+            else:
+                st.info("Faltan datos de Secado.")
         
         with c2:
-            st.write("**Consumo Diario en Secado**")
-            st.markdown("""
-            * **Palenciana:** 79,240 kg (Hueso)
-            * **Marchena:** 76,560 kg (Hueso)
-            * **Baena:** 17,300 kg (Hueso)
-            * **Espejo:** 6,700 kg (Hueso) + 177,000 kg (Poda)
-            """)
-            total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 649219
-            st.metric("Disponibilidad Total Secado", f"{total_ogs:,.0f} kg OGS")
+            total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
+            st.metric("Total Secado Generado", f"{total_ogs:,.0f} kg")
+            st.write("**Tabla de datos:**")
+            if not df_secado.empty:
+                st.dataframe(format_df_numbers(df_secado[['Centro', 'Entrada_Alperujo']]), hide_index=True, use_container_width=True)
 
-    # ==========================================
-    # PESTAÑA 5: EXTRACCIÓN
-    # ==========================================
+    # --- PESTAÑA 5 ---
     with tabs[4]:
-        st.subheader("Extractora (Procesado Físico/Químico)")
-
         col_izq, col_der = st.columns(2)
         with col_izq:
-            st.write("**Balance de Masas: OGS vs Orujillo Desgrasado (kg)**")
-            if not df_ext.empty and all(col in df_ext.columns for col in ["Extractora", "OGS_Procesado", "Salida_Orujillo"]):
-                fig_bal = px.bar(df_ext, x="Extractora", y=["OGS_Procesado", "Salida_Orujillo"], barmode="group",
-                                 labels={"value": "Kilos", "variable": "Flujo"}, color_discrete_sequence=['#84cc16', '#4d7c0f'])
+            st.write("**Balance de Masas: OGS vs Orujillo (kg)**")
+            if not df_ext.empty and 'Extractora' in df_ext.columns and 'OGS_Procesado' in df_ext.columns:
+                fig_bal = px.bar(df_ext, x="Extractora", y=["OGS_Procesado", "Salida_Orujillo"] if 'Salida_Orujillo' in df_ext.columns else "OGS_Procesado", barmode="group", color_discrete_sequence=['#84cc16', '#4d7c0f'])
                 fig_bal.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_bal, use_container_width=True)
             
         with col_der:
-            st.write("**Producción de Aceite Industrial vs Objetivo (kg)**")
-            if not df_ext.empty and all(col in df_ext.columns for col in ["Extractora", "Aceite_Prod", "Obj_Aceite"]):
-                fig_aceite = px.bar(df_ext, x="Extractora", y=["Aceite_Prod", "Obj_Aceite"], barmode="group",
-                                    labels={"value": "Kilos Aceite", "variable": "Indicador"}, color_discrete_sequence=['#eab308', '#fef08a'])
+            st.write("**Producción de Aceite vs Objetivo (kg)**")
+            if not df_ext.empty and 'Aceite_Prod' in df_ext.columns:
+                fig_aceite = px.bar(df_ext, x="Extractora", y=["Aceite_Prod", "Obj_Aceite"] if 'Obj_Aceite' in df_ext.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
                 fig_aceite.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_aceite, use_container_width=True)
-            
-            st.write("**Consumos Extractoras:**")
-            st.info("🔥 **El Tejar:** 45,000 kg (Hueso)")
 
-    # ==========================================
-    # PESTAÑA 6: ELECTRICIDAD
-    # ==========================================
+    # --- PESTAÑA 6 ---
     with tabs[5]:
-        st.subheader("Generación y Cogeneración Eléctrica")
-
         col1, col2 = st.columns([2, 1])
         with col1:
             st.write("**Producción kWh vs Objetivo Diario**")
-            if not df_elec.empty and all(col in df_elec.columns for col in ["Planta", "Generada_kWh", "Optimo_kWh"]):
-                fig_kwh = px.bar(df_elec, x="Planta", y=["Generada_kWh", "Optimo_kWh"], barmode="group",
-                                 labels={"value": "Energía (kWh)", "variable": "Indicador"}, color_discrete_sequence=['#3b82f6', '#93c5fd'])
+            if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns:
+                fig_kwh = px.bar(df_elec, x="Planta", y=["Generada_kWh", "Optimo_kWh"] if 'Optimo_kWh' in df_elec.columns else "Generada_kWh", barmode="group", color_discrete_sequence=['#3b82f6', '#93c5fd'])
                 fig_kwh.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_kwh, use_container_width=True)
+            else:
+                st.info("Faltan datos eléctricos.")
             
         with col2:
-            st.write("**Consumo de Combustible**")
-            st.error("🔥 **Baena 25 MW:** 66,033 kg (Orujillo)")
-            
             st.metric("Total Generado Hoy", f"{total_elec:,.0f} kWh")
+            if not df_elec.empty:
+                st.dataframe(format_df_numbers(df_elec), hide_index=True)
