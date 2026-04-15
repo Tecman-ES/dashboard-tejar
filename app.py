@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import date
 import io
+import csv
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
@@ -46,7 +47,7 @@ def check_password():
         return False
     return True
 
-# --- FUNCIONES DE FORMATO ---
+# --- FUNCIONES DE FORMATO Y LIMPIEZA ---
 def format_df_numbers(df):
     """Formatea columnas numéricas para mostrar separadores de miles"""
     styled_df = df.copy()
@@ -56,21 +57,26 @@ def format_df_numbers(df):
                 styled_df[col] = styled_df[col].apply(lambda x: f"{x:,.0f}" if pd.notnull(x) else "")
     return styled_df
 
-def clean_val(x):
-    """Limpia la celda de cualquier coma de Excel o basura invisible"""
-    if pd.isna(x): return None
-    # Borra espacios y las famosas comas pegadas al final (ej. '27694950,,,,,')
-    x = str(x).strip().rstrip(',;') 
-    if x.lower() in ['nan', 'none', '']: return None
-    # Cambia la coma decimal española por punto para que Python lo entienda como número
-    x = x.replace(',', '.')
+def fix_number(x):
+    """Convierte números españoles y limpia comas fantasma de Excel"""
+    if pd.isna(x): return x
+    if isinstance(x, str):
+        x = x.strip()
+        test_str = x.replace('-', '').replace(',', '').replace('.', '')
+        if test_str.isdigit() and len(test_str) > 0:
+            if x.count(',') > 1: x = x.replace(',', '')
+            elif x.count('.') > 1: x = x.replace('.', '')
+            elif ',' in x and '.' in x:
+                if x.rfind(',') > x.rfind('.'): x = x.replace('.', '').replace(',', '.')
+                else: x = x.replace(',', '')
+            elif ',' in x: x = x.replace(',', '.')
     return x
 
-# --- CARGA SUPER ROBUSTA DE DATOS ---
+# --- CARGA ANTI-FALLOS ---
 def extract_table(df_raw, marker):
     try:
         col0 = df_raw.iloc[:, 0].astype(str).str.strip()
-        idx = df_raw[col0.str.contains(marker, regex=False, na=False)].index
+        idx = df_raw[col0 == marker].index
         if len(idx) == 0: return pd.DataFrame()
         
         start_idx = idx[0]
@@ -81,33 +87,29 @@ def extract_table(df_raw, marker):
                 end_idx = i
                 break
                 
-        df_sub = df_raw.iloc[start_idx+1:end_idx].dropna(how='all').reset_index(drop=True)
+        df_sub = df_raw.iloc[start_idx+1:end_idx].copy()
+        df_sub = df_sub.replace(r'^\s*$', pd.NA, regex=True).dropna(how='all').reset_index(drop=True)
         if df_sub.empty: return pd.DataFrame()
         
-        # Filtrar columnas válidas reales (elimina las de Excel vacías)
-        valid_cols = []
-        for c in df_sub.columns:
-            val = str(df_sub.loc[0, c]).strip().rstrip(',;').lower()
-            if val not in ['nan', 'none', '<na>', '']:
-                valid_cols.append(c)
-                
+        headers = df_sub.iloc[0].fillna('').astype(str).str.strip()
+        df_sub.columns = headers
+        df_sub = df_sub.iloc[1:].reset_index(drop=True)
+        
+        # Quedarse solo con columnas que tengan nombre (elimina las "columnas coma")
+        valid_cols = [c for c in df_sub.columns if c != '']
         if not valid_cols: return pd.DataFrame()
         df_sub = df_sub[valid_cols]
         
-        # Asignar cabeceras limpias
-        headers = df_sub.iloc[0].apply(lambda x: str(x).strip().rstrip(',;'))
-        df_sub.columns = headers
-        df_sub = df_sub[1:].reset_index(drop=True)
-        df_sub = df_sub.loc[:, ~df_sub.columns.duplicated()]
-        
-        # Aplicar el "limpiaparabrisas" celda por celda y convertir a número
+        # Limpiar y forzar a número donde se pueda
         for col in df_sub.columns:
-            df_sub[col] = df_sub[col].apply(clean_val)
-            df_sub[col] = pd.to_numeric(df_sub[col], errors='ignore')
-            
-        return df_sub.dropna(how='all').reset_index(drop=True)
+            df_sub[col] = df_sub[col].apply(fix_number)
+            s_num = pd.to_numeric(df_sub[col], errors='coerce')
+            if s_num.isna().sum() <= df_sub[col].isna().sum():
+                df_sub[col] = s_num
+                
+        return df_sub
     except Exception as e:
-        st.sidebar.warning(f"Error procesando tabla {marker}: {e}")
+        st.sidebar.warning(f"Error procesando {marker}: {e}")
         return pd.DataFrame()
 
 def load_data(uploaded_file):
@@ -115,17 +117,17 @@ def load_data(uploaded_file):
         try:
             uploaded_file.seek(0)
             if uploaded_file.name.endswith('.csv'):
-                content = uploaded_file.getvalue().decode('utf-8', errors='replace')
-                # Adivina inteligentemente si está separado por comas o punto y coma
-                df_raw = pd.read_csv(io.StringIO(content), header=None, sep=None, engine='python', on_bad_lines='skip')
+                content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
+                sep = ','
+                first_line = content.split('\n')[0] if content else ''
+                if first_line.count(';') > first_line.count(','): sep = ';'
                 
-                # Si pandas falla al separar, lo forzamos a mano
-                if len(df_raw.columns) == 1:
-                    first_val = str(df_raw.iloc[0, 0])
-                    if ';' in first_val: df_raw = df_raw[0].str.split(';', expand=True)
-                    elif ',' in first_val: df_raw = df_raw[0].str.split(',', expand=True)
+                # Usar módulo CSV nativo para destruir las comas fantasma
+                reader = csv.reader(io.StringIO(content), delimiter=sep)
+                data = list(reader)
+                df_raw = pd.DataFrame(data).fillna('')
             else:
-                df_raw = pd.read_excel(uploaded_file, header=None)
+                df_raw = pd.read_excel(uploaded_file, header=None, dtype=str).fillna('')
             
             df_aport = extract_table(df_raw, "# APORTACIONES")
             df_existencias = extract_table(df_raw, "# EXISTENCIAS")
@@ -134,21 +136,19 @@ def load_data(uploaded_file):
             df_ext = extract_table(df_raw, "# EXTRACCION")
             df_elec = extract_table(df_raw, "# ELECTRICIDAD")
             
-            st.sidebar.success("✅ Datos sincronizados correctamente")
+            st.sidebar.success("✅ Archivo leído y sincronizado perfectamente")
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
         except Exception as e:
-            st.sidebar.error(f"Error grave leyendo archivo: {e}")
+            st.sidebar.error(f"Error grave: {e}")
             
-    # DATOS DE DEMOSTRACIÓN (Fallback)
+    # DATOS DE DEMOSTRACIÓN
     st.sidebar.info("📊 Mostrando datos de prueba.")
-    
     df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
     df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Optimo": [5251, 442, 1906], "Acidez": [2.92, 11.15, 7.81]})
     df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298], "Obj_OGS": [148900, 272720, 288560, 313160, 181020]})
     df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena"], "OGS_Procesado": [570400, 110000], "Salida_Orujillo": [443740, 101700], "Aceite_Prod": [31800, 8300], "Obj_Aceite": [43400, 18900]})
     df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229], "Optimo_kWh": [223608, 416169, 105737]})
-
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
 # --- APLICACIÓN PRINCIPAL ---
@@ -208,7 +208,7 @@ if check_password():
                 fig_aport.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8d6e63')
                 fig_aport.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_aport, use_container_width=True)
-            else: st.info("Sube datos para ver la gráfica.")
+            else: st.info("Faltan datos de Aportaciones en tu archivo.")
                 
         with c2:
             st.write("**Existencias Estratégicas:**")
@@ -227,6 +227,7 @@ if check_password():
                     fig_cent_comp.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent['Optimo'], texttemplate='%{text:,.0f}'))
                 fig_cent_comp.update_layout(barmode='group', yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_cent_comp, use_container_width=True)
+            else: st.info("Faltan datos de Centrifugación en tu archivo.")
             
         with col2:
             st.write("**Métricas Detalladas**")
@@ -242,6 +243,7 @@ if check_password():
                 fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
                 fig_ogs.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_ogs, use_container_width=True)
+            else: st.info("Faltan datos de Secado en tu archivo.")
         
         with c2:
             total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
@@ -275,6 +277,7 @@ if check_password():
                 fig_kwh = px.bar(df_elec, x="Planta", y=["Generada_kWh", "Optimo_kWh"] if 'Optimo_kWh' in df_elec.columns else "Generada_kWh", barmode="group", color_discrete_sequence=['#3b82f6', '#93c5fd'])
                 fig_kwh.update_layout(yaxis=dict(tickformat=","))
                 st.plotly_chart(fig_kwh, use_container_width=True)
+            else: st.info("Faltan datos eléctricos en tu archivo.")
             
         with col2:
             st.metric("Total Generado Hoy", f"{total_elec:,.0f} kWh")
