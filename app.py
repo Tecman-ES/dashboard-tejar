@@ -211,20 +211,36 @@ def format_names(series):
     """Limpia los nombres para que encajen con los objetivos (ej: 'EL TEJAR' -> 'El Tejar')"""
     return series.astype(str).str.strip().str.title().str.replace('Mw', 'MW', regex=False)
 
-# --- TRADUCTOR MAGICO DE SUBIFOR ---
+# --- TRADUCTOR MAGICO DE SUBIFOR (MEJORADO Y BLINDADO) ---
 def parse_subifor_csv(df_raw):
     """Extrae automáticamente los datos del CSV bruto de Subifor"""
     # 1. Limpieza de columnas
     df_raw.columns = [str(c).lower().strip() for c in df_raw.columns]
+    
+    # 2. Buscar la columna de nombres (Subifor a veces la llama distinto)
+    name_col = None
+    for col in ['nombre_c', 'nombre', 'centro', 'planta', 'descripción', 'descripcion']:
+        if col in df_raw.columns:
+            name_col = col
+            break
+    if not name_col:
+        # Si no la encuentra por nombre, suele ser la 5ª columna (índice 4)
+        if len(df_raw.columns) >= 5:
+            name_col = df_raw.columns[4]
+        else:
+            raise ValueError("No se pudo identificar la columna de la Planta/Centro en el archivo.")
+
+    # 3. Asegurar que las métricas son numéricas
     for col in ['actividad', 'a1', 'a2', 'a3']:
         if col in df_raw.columns:
             df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0)
             
     # Actividad 1: Aportaciones (Orujo)
-    df_aport = df_raw[df_raw['actividad'] == 1][['nombre_c', 'a1', 'a2']].copy()
-    df_aport.rename(columns={'nombre_c': 'Planta', 'a1': 'Hoy (kg)', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_aport = df_raw[df_raw['actividad'] == 1][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    df_aport.rename(columns={name_col: 'Planta', 'a1': 'Hoy (kg)', 'a2': 'Acum. Mensual'}, inplace=True)
     df_aport['Planta'] = format_names(df_aport['Planta'])
-    df_aport = df_aport[(df_aport['Hoy (kg)'] > 0) | (df_aport['Acum. Mensual'] > 0)]
+    if not df_aport.empty:
+        df_aport = df_aport[(df_aport['Hoy (kg)'] > 0) | (df_aport['Acum. Mensual'] > 0)]
     
     # Actividad 0: Existencias
     df_ex = df_raw[df_raw['actividad'] == 0]
@@ -234,26 +250,34 @@ def parse_subifor_csv(df_raw):
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [hueso, orujillo, hoja]})
     
     # Actividad 2 y 3: Centrifugación
-    df_c2 = df_raw[df_raw['actividad'] == 2][['nombre_c', 'a1']].rename(columns={'nombre_c': 'Centro', 'a1': 'Entrada_Alperujo'})
-    df_c3 = df_raw[df_raw['actividad'] == 3][['nombre_c', 'a1', 'a2']].rename(columns={'nombre_c': 'Centro', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'})
-    df_cent = pd.merge(df_c2, df_c3, on='Centro', how='outer').fillna(0)
+    df_c2 = df_raw[df_raw['actividad'] == 2][[name_col, 'a1']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Entrada_Alperujo'])
+    df_c3 = df_raw[df_raw['actividad'] == 3][[name_col, 'a1', 'a2']].rename(columns={name_col: 'Centro', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Aceite_Prod', 'Acum. Mensual'])
+    
+    if not df_c2.empty or not df_c3.empty:
+        df_cent = pd.merge(df_c2, df_c3, on='Centro', how='outer').fillna(0)
+    else:
+        df_cent = pd.DataFrame(columns=['Centro', 'Entrada_Alperujo', 'Aceite_Prod', 'Acum. Mensual'])
+        
     df_cent['Centro'] = format_names(df_cent['Centro'])
-    df_cent['Rdto_Obtenido'] = (df_cent['Aceite_Prod'] / df_cent['Entrada_Alperujo'] * 100).round(2).replace([float('inf'), -float('inf')], 0).fillna(0)
-    df_cent['Acidez'] = pd.NA # En el csv base no hay acidez
+    if 'Entrada_Alperujo' in df_cent.columns and 'Aceite_Prod' in df_cent.columns:
+        df_cent['Rdto_Obtenido'] = (df_cent['Aceite_Prod'] / df_cent['Entrada_Alperujo'] * 100).round(2).replace([float('inf'), -float('inf')], 0).fillna(0)
+    else:
+        df_cent['Rdto_Obtenido'] = 0
+    df_cent['Acidez'] = pd.NA
     
     # Actividad 5: Secado (OGS)
-    df_secado = df_raw[df_raw['actividad'] == 5][['nombre_c', 'a1', 'a2']].copy()
-    df_secado.rename(columns={'nombre_c': 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_secado = df_raw[df_raw['actividad'] == 5][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    df_secado.rename(columns={name_col: 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
     df_secado['Centro'] = format_names(df_secado['Centro'])
     
     # Actividad 6: Extracción (Aceite)
-    df_ext = df_raw[df_raw['actividad'] == 6][['nombre_c', 'a1', 'a2']].copy()
-    df_ext.rename(columns={'nombre_c': 'Extractora', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_ext = df_raw[df_raw['actividad'] == 6][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    df_ext.rename(columns={name_col: 'Extractora', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'}, inplace=True)
     df_ext['Extractora'] = format_names(df_ext['Extractora'])
     
     # Actividad 8: Electricidad
-    df_elec = df_raw[df_raw['actividad'] == 8][['nombre_c', 'a1', 'a2']].copy()
-    df_elec.rename(columns={'nombre_c': 'Planta', 'a1': 'Generada_kWh', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_elec = df_raw[df_raw['actividad'] == 8][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    df_elec.rename(columns={name_col: 'Planta', 'a1': 'Generada_kWh', 'a2': 'Acum. Mensual'}, inplace=True)
     df_elec['Planta'] = format_names(df_elec['Planta'])
     
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
@@ -263,27 +287,36 @@ def load_data(uploaded_file):
     if uploaded_file is not None:
         try:
             uploaded_file.seek(0)
-            if uploaded_file.name.lower().endswith('.csv'):
-                content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
-                sep = ',' if content.count(',') > content.count(';') else ';'
+            filename = uploaded_file.name.lower()
+            
+            # --- NUEVO: SOPORTE TOTAL PARA EXCEL O CSV DE SUBIFOR ---
+            if filename.endswith('.csv') or filename.endswith('.txt'):
+                content = uploaded_file.getvalue().decode('latin1', errors='ignore') # Latin1 evita errores con ñ y acentos
+                sep = ';' if content.count(';') > content.count(',') else ','
+                df_raw = pd.read_csv(io.StringIO(content), delimiter=sep)
                 
-                # Intentamos leer el archivo para ver si es el bruto de Subifor
-                try:
-                    df_raw = pd.read_csv(io.StringIO(content), delimiter=sep)
-                    cols = [str(c).lower().strip() for c in df_raw.columns]
-                    if 'actividad' in cols and 'a1' in cols:
-                        return parse_subifor_csv(df_raw) # 🚀 MODO SUBIFOR AUTOMÁTICO
-                except: pass
-                
-                # Si falla o no es Subifor, usamos la lectura de tablas antiguas
-                uploaded_file.seek(0)
+                cols = [str(c).lower().strip() for c in df_raw.columns]
+                if 'actividad' in cols:
+                    return parse_subifor_csv(df_raw)
+                    
+                # Si no es Subifor, lo tratamos como manual
                 reader = csv.reader(io.StringIO(content), delimiter=sep)
                 df_dict = {"Sheet1": pd.DataFrame(list(reader)).fillna('')}
-            else:
-                raw_dict = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
-                df_dict = {name: df.fillna('') for name, df in raw_dict.items()}
                 
-            # Modo manual (Marcadores #)
+            else: # Es un archivo Excel (.xlsx o .xls)
+                raw_dict = pd.read_excel(uploaded_file, sheet_name=None)
+                
+                # Revisar si la primera pestaña del Excel es de Subifor
+                first_sheet = list(raw_dict.keys())[0]
+                first_df = raw_dict[first_sheet]
+                cols = [str(c).lower().strip() for c in first_df.columns]
+                if 'actividad' in cols:
+                    return parse_subifor_csv(first_df)
+                
+                # Si no es Subifor, cargamos todas las pestañas para el modo manual
+                df_dict = {name: df.fillna('').astype(str) for name, df in raw_dict.items()}
+                
+            # --- MODO MANUAL (Buscando los marcadores #) ---
             def extract_table(df_d, marker):
                 for sheet_name, df_r in df_d.items():
                     if df_r.empty: continue
@@ -324,7 +357,7 @@ def load_data(uploaded_file):
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
             
         except Exception as e:
-            st.error(f"Error procesando archivo: {e}")
+            st.error(f"Error procesando archivo: {str(e)}")
             pass
             
     # --- DATOS REALES (15/04/2026) CUANDO NO HAY ARCHIVO SUBIDO ---
