@@ -24,6 +24,7 @@ st.markdown("""
     .news-title { font-size: 1.1rem; font-weight: bold; color: #fbbf24; margin-bottom: 5px; }
     .news-source { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
     .news-snippet { font-size: 0.9rem; line-height: 1.4; }
+    .read-more { color: #38bdf8; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
     .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
     
     .kpi-card {
@@ -44,7 +45,6 @@ st.markdown("""
     .kpi-value { color: #f8fafc; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
     .kpi-unit { font-size: 1rem; color: #cbd5e1; font-weight: 500; }
     
-    /* ESTILOS PARA LOS DELTAS (DESVIACIONES) */
     .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); }
     .delta-positive { color: #4ade80; } 
     .delta-negative { color: #ef4444; } 
@@ -82,7 +82,7 @@ def check_password():
         return False
     return True
 
-# --- FUNCIONES DE MEMORIA (MÁQUINA DEL TIEMPO) ---
+# --- FUNCIONES DE MEMORIA ---
 def save_file_to_disk(uploaded_file, date_obj):
     date_str = date_obj.isoformat()
     with open(f"parte_{date_str}.dat", "wb") as f:
@@ -112,7 +112,7 @@ def load_last_date():
             with open("ultima_fecha.txt", "r") as f:
                 return date.fromisoformat(f.read().strip())
         except: pass
-    return date(2026, 4, 14)
+    return date.today()
 
 # --- SISTEMA DE OBJETIVOS ---
 def load_objectives():
@@ -156,18 +156,12 @@ def format_kpi_number(num):
 def get_delta_html(real, target):
     if not target or target == 0 or pd.isna(target):
         return "<div class='kpi-delta delta-neutral'>Sin objetivo definido</div>"
-    
     diff = real - target
     pct = (diff / target) * 100
-    
-    if diff > 0:
-        return f"<div class='kpi-delta delta-positive'>▲ +{format_kpi_number(diff)} (+{pct:.1f}%)</div>"
-    elif diff < 0:
-        return f"<div class='kpi-delta delta-negative'>▼ {format_kpi_number(diff)} ({pct:.1f}%)</div>"
-    else:
-        return "<div class='kpi-delta delta-neutral'>▬ Objetivo exacto</div>"
+    if diff > 0: return f"<div class='kpi-delta delta-positive'>▲ +{format_kpi_number(diff)} (+{pct:.1f}%)</div>"
+    elif diff < 0: return f"<div class='kpi-delta delta-negative'>▼ {format_kpi_number(diff)} ({pct:.1f}%)</div>"
+    else: return "<div class='kpi-delta delta-neutral'>▬ Objetivo exacto</div>"
 
-# --- FUNCION PARA TARJETAS KPI (SIMPLIFICADA Y LIMPIA) ---
 def get_kpi_card_html(title, icon, val, unit, delta_html, css_class=""):
     return f"""
     <div class="kpi-card {css_class}">
@@ -215,73 +209,122 @@ def fix_number(x):
             elif ',' in x: x = x.replace(',', '.')
     return x
 
-def extract_table(df_raw, marker):
+# --- MOTOR DE EXTRACCIÓN MULTI-PÁGINA ---
+def extract_table(df_dict, marker):
+    """Busca la tabla en TODAS las páginas del Excel"""
     try:
-        col0 = df_raw.iloc[:, 0].astype(str).str.strip()
-        idx = df_raw[col0 == marker].index
-        if len(idx) == 0: return pd.DataFrame()
-        
-        start_idx = idx[0]
-        end_idx = len(df_raw)
-        for i in range(start_idx + 1, len(df_raw)):
-            val = str(df_raw.iloc[i, 0]).strip()
-            if val.startswith('#') and val != marker:
-                end_idx = i
-                break
+        # Iterar sobre todas las páginas (o la única si es CSV)
+        for sheet_name, df_raw in df_dict.items():
+            if df_raw.empty: continue
+            
+            col0 = df_raw.iloc[:, 0].astype(str).str.strip()
+            idx = df_raw[col0 == marker].index
+            
+            # Si encuentra el marcador en esta hoja, extrae la tabla
+            if len(idx) > 0:
+                start_idx = idx[0]
+                end_idx = len(df_raw)
+                for i in range(start_idx + 1, len(df_raw)):
+                    val = str(df_raw.iloc[i, 0]).strip()
+                    if val.startswith('#') and val != marker:
+                        end_idx = i
+                        break
+                        
+                df_sub = df_raw.iloc[start_idx+1:end_idx].copy()
+                df_sub = df_sub.replace(r'^\s*$', pd.NA, regex=True).dropna(how='all').reset_index(drop=True)
+                if df_sub.empty: return pd.DataFrame()
                 
-        df_sub = df_raw.iloc[start_idx+1:end_idx].copy()
-        df_sub = df_sub.replace(r'^\s*$', pd.NA, regex=True).dropna(how='all').reset_index(drop=True)
-        if df_sub.empty: return pd.DataFrame()
-        
-        headers = df_sub.iloc[0].fillna('').astype(str).str.strip()
-        df_sub.columns = headers
-        df_sub = df_sub.iloc[1:].reset_index(drop=True)
-        
-        valid_cols = [c for c in df_sub.columns if c != '']
-        if not valid_cols: return pd.DataFrame()
-        df_sub = df_sub[valid_cols]
-        
-        for col in df_sub.columns:
-            df_sub[col] = df_sub[col].apply(fix_number)
-            s_num = pd.to_numeric(df_sub[col], errors='coerce')
-            if s_num.isna().sum() <= df_sub[col].isna().sum():
-                df_sub[col] = s_num
+                headers = df_sub.iloc[0].fillna('').astype(str).str.strip()
+                df_sub.columns = headers
+                df_sub = df_sub.iloc[1:].reset_index(drop=True)
                 
-        return df_sub
-    except:
+                valid_cols = [c for c in df_sub.columns if c != '']
+                if not valid_cols: return pd.DataFrame()
+                df_sub = df_sub[valid_cols]
+                
+                for col in df_sub.columns:
+                    df_sub[col] = df_sub[col].apply(fix_number)
+                    s_num = pd.to_numeric(df_sub[col], errors='coerce')
+                    if s_num.isna().sum() <= df_sub[col].isna().sum():
+                        df_sub[col] = s_num
+                        
+                return df_sub
+        
+        # Si llega aquí, es que no encontró el marcador en ninguna página
+        return pd.DataFrame()
+    except Exception as e:
         return pd.DataFrame()
 
 def load_data(uploaded_file):
     if uploaded_file is not None:
         try:
             uploaded_file.seek(0)
+            df_dict = {}
             if uploaded_file.name.endswith('.csv'):
                 content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
                 sep = ','
                 first_line = content.split('\n')[0] if content else ''
                 if first_line.count(';') > first_line.count(','): sep = ';'
                 reader = csv.reader(io.StringIO(content), delimiter=sep)
-                df_raw = pd.DataFrame(list(reader)).fillna('')
+                df_dict["Sheet1"] = pd.DataFrame(list(reader)).fillna('')
             else:
-                df_raw = pd.read_excel(uploaded_file, header=None, dtype=str).fillna('')
+                raw_dict = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
+                for name, df in raw_dict.items():
+                    df_dict[name] = df.fillna('')
             
-            df_aport = extract_table(df_raw, "# APORTACIONES")
-            df_existencias = extract_table(df_raw, "# EXISTENCIAS")
-            df_cent = extract_table(df_raw, "# CENTRIFUGACION")
-            df_secado = extract_table(df_raw, "# SECADO")
-            df_ext = extract_table(df_raw, "# EXTRACCION")
-            df_elec = extract_table(df_raw, "# ELECTRICIDAD")
+            df_aport = extract_table(df_dict, "# APORTACIONES")
+            df_existencias = extract_table(df_dict, "# EXISTENCIAS")
+            df_cent = extract_table(df_dict, "# CENTRIFUGACION")
+            df_secado = extract_table(df_dict, "# SECADO")
+            df_ext = extract_table(df_dict, "# EXTRACCION")
+            df_elec = extract_table(df_dict, "# ELECTRICIDAD")
             
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
-        except: pass
+        except Exception as e:
+            st.error(f"Error procesando archivo: {e}")
+            pass
             
-    # DATOS DEMO (Actualizados con datos mensuales de prueba)
-    df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [682620, 76600, 882900, 107840, 333060, 228700, 54160, 64780], "Acum. Mensual": [10362240, 0, 9152660, 173220, 3579480, 2918540, 0, 2281940]})
-    df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
-    df_cent = pd.DataFrame({"Centro": ["Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [461201, 67426, 631151], "Aceite_Prod": [1870, 632, 771], "Rdto_Obtenido": [0.41, 0.94, 0.12], "Acidez": [2.92, 11.15, 7.81], "Acum. Mensual": [25500, 9800, 12400]})
-    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 457958, 157546], "OGS_Salida": [134400, 221140, 161380, 110000, 22298]})
-    df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena"], "OGS_Procesado": [570400, 110000], "Salida_Orujillo": [443740, 101700], "Aceite_Prod": [31800, 8300], "Acum. Mensual": [450000, 125000]})
-    df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 450634, 119229], "Acum. Mensual": [2635700, 6224221, 1389457]})
+    # --- DATOS REALES INYECTADOS DEL PDF (PARTE 15/04/2026) ---
+    df_aport = pd.DataFrame({
+        "Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], 
+        "Hoy (kg)": [925240, 76600, 1000940, 173220, 114380, 152180, 54160, 113180], 
+        "Acum. Mensual": [11287480, 249122145, 10153600, 203101510, 3693860, 3070720, 87145800, 2395120]
+    })
+    
+    df_existencias = pd.DataFrame({
+        "Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], 
+        "Total Kilos": [27907170, 16641240, 57504471]
+    })
+    
+    df_cent = pd.DataFrame({
+        "Centro": ["Palenciana", "Marchena", "Cabra", "Baena"], 
+        "Entrada_Alperujo": [260545, 389980, 105026, 519981], 
+        "Aceite_Prod": [0, 2589, 778, 2056], 
+        "Rdto_Obtenido": [0.0, 0.53, 0.44, 0.39], 
+        "Acidez": [3.44, 2.92, 65.82, 9.63], 
+        "Acum. Mensual": [181512, 28296, 8850, 22616]
+    })
+    
+    df_secado = pd.DataFrame({
+        "Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], 
+        "Entrada_Alperujo": [366253, 442265, 461455, 621928, 695474, 527979, 163116, 740039], 
+        "OGS_Salida": [118760, 111280, 220520, 0, 244000, 0, 0, 15375]
+    })
+    
+    df_ext = pd.DataFrame({
+        "Extractora": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], 
+        "OGS_Procesado": [396860, 244000, 329510, 29100], 
+        "Salida_Orujillo": [404440, 229500, 268440, 0], 
+        "Aceite_Prod": [33900, 14500, 0, 0], 
+        "Acum. Mensual": [255100, 151900, 171100, 192398]
+    })
+    
+    df_elec = pd.DataFrame({
+        "Planta": ["Vetejar 12.6 MW", "Autogeneración 5.7 MW", "Baena 25 MW", "Algodonales 5.3 MW"], 
+        "Generada_kWh": [232793, 67876, 429248, 117821], 
+        "Acum. Mensual": [2868493, 833355, 6653469, 1507278]
+    })
+    
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
 def filter_dataframe(df, column_name, planta_seleccionada):
@@ -310,11 +353,9 @@ if check_password():
             
     st.markdown("---")
     
-    # --- SELECTOR DE MÁQUINA DEL TIEMPO (GLOBAL) ---
     col_date, col_filter = st.columns([1, 2])
     with col_date:
         fecha_activa = st.date_input("📅 Selecciona la Fecha del Reporte:", load_last_date())
-        # Actualizamos la memoria para la próxima vez
         if fecha_activa != load_last_date():
             with open("ultima_fecha.txt", "w") as f:
                 f.write(fecha_activa.isoformat())
@@ -323,7 +364,6 @@ if check_password():
         plantas_disponibles = ["Todas", "Baena", "Cabra", "Marchena", "Palenciana", "Pedro Abad", "Espejo", "Bogarre", "Mancha Real", "Algodonales", "Vetejar", "El Tejar"]
         planta_activa = st.selectbox("📍 Filtro Global por Planta/Centro:", plantas_disponibles)
 
-    # --- ZONA DE SUBIDA (SOLO OFICINA) ---
     if role == "oficina":
         st.info(f"👋 **Modo Oficina:** Si subes el archivo ahora, quedará asignado al **{fecha_activa.strftime('%d/%m/%Y')}**.")
         with st.container():
@@ -332,23 +372,16 @@ if check_password():
                 save_file_to_disk(archivo_subido, fecha_activa)
                 st.success(f"✅ Archivo guardado correctamente en la base de datos histórica para el {fecha_activa.strftime('%d/%m/%Y')}.")
     
-    # --- CARGA DE DATOS PARA LA FECHA ACTIVA ---
     archivo_compartido = load_file_from_disk(fecha_activa)
     if archivo_compartido is None:
         st.warning(f"⚠️ Aún no hay ningún parte subido para el día **{fecha_activa.strftime('%d/%m/%Y')}**. Por favor, contacte con oficina o seleccione otra fecha.")
-        df_aport = pd.DataFrame()
-        df_existencias = pd.DataFrame()
-        df_cent = pd.DataFrame()
-        df_secado = pd.DataFrame()
-        df_ext = pd.DataFrame()
-        df_elec = pd.DataFrame()
+        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     else:
         df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
         
     df_obj = load_objectives()
     df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
     
-    # Aplicamos filtro global
     df_aport = filter_dataframe(df_aport, "Planta", planta_activa)
     df_cent = filter_dataframe(df_cent, "Centro", planta_activa)
     df_secado = filter_dataframe(df_secado, "Centro", planta_activa)
@@ -358,53 +391,40 @@ if check_password():
 
     tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
-    # --- PESTAÑA 1: VISIÓN GENERAL (CON DELTAS) ---
+    # --- PESTAÑA 1: VISIÓN GENERAL ---
     with tabs[0]:
         if not df_aport.empty or not df_elec.empty:
             col_resumen, col_noticias = st.columns([2, 1])
             with col_resumen:
                 st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
                 
-                # Cálculos de totales y Deltas diarios
                 total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
                 total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
                 total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
                 total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
                 
-                # Cálculos de acumulados mensuales
                 total_orujo_mes = df_aport['Acum. Mensual'].sum() if not df_aport.empty and 'Acum. Mensual' in df_aport.columns else 0
                 total_elec_mes = df_elec['Acum. Mensual'].sum() if not df_elec.empty and 'Acum. Mensual' in df_elec.columns else 0
                 total_aceite_cent_mes = df_cent['Acum. Mensual'].sum() if not df_cent.empty and 'Acum. Mensual' in df_cent.columns else 0
                 total_aceite_ext_mes = df_ext['Acum. Mensual'].sum() if not df_ext.empty and 'Acum. Mensual' in df_ext.columns else 0
                 
-                # Objetivos
                 target_elec = df_obj_filtered[df_obj_filtered['Area']=='Electricidad']['Objetivo_Diario'].sum()
                 target_cent = df_obj_filtered[df_obj_filtered['Area']=='Centrifugacion']['Objetivo_Diario'].sum()
                 target_ext = df_obj_filtered[df_obj_filtered['Area']=='Extraccion']['Objetivo_Diario'].sum()
                 
-                # --- FILA 1: PRODUCCIÓN DIARIA ---
                 st.markdown("#### 📅 Producción Diaria (Hoy)")
                 c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
-                with c2:
-                    st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
-                with c3:
-                    st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
-                with c4:
-                    st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
+                with c1: st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
+                with c2: st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
+                with c3: st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
+                with c4: st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
                 
-                # --- FILA 2: ACUMULADO MENSUAL ---
                 st.markdown("<br>#### 📊 Acumulado Mensual", unsafe_allow_html=True)
                 m1, m2, m3, m4 = st.columns(4)
-                with m1:
-                    st.markdown(get_kpi_card_html("Orujo (Mes)", "📦", total_orujo_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", ""), unsafe_allow_html=True)
-                with m2:
-                    st.markdown(get_kpi_card_html("Electricidad (Mes)", "⚡", total_elec_mes, "kWh", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "blue"), unsafe_allow_html=True)
-                with m3:
-                    st.markdown(get_kpi_card_html("Aceite Centrif. (Mes)", "💧", total_aceite_cent_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "yellow"), unsafe_allow_html=True)
-                with m4:
-                    st.markdown(get_kpi_card_html("Aceite Extrac. (Mes)", "⚗️", total_aceite_ext_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "orange"), unsafe_allow_html=True)
+                with m1: st.markdown(get_kpi_card_html("Orujo (Mes)", "📦", total_orujo_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", ""), unsafe_allow_html=True)
+                with m2: st.markdown(get_kpi_card_html("Electricidad (Mes)", "⚡", total_elec_mes, "kWh", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "blue"), unsafe_allow_html=True)
+                with m3: st.markdown(get_kpi_card_html("Aceite Centrif. (Mes)", "💧", total_aceite_cent_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "yellow"), unsafe_allow_html=True)
+                with m4: st.markdown(get_kpi_card_html("Aceite Extrac. (Mes)", "⚗️", total_aceite_ext_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "orange"), unsafe_allow_html=True)
                 
                 st.write("<br>", unsafe_allow_html=True)
                 st.write("### 🤖 Análisis Operativo IA")
@@ -536,20 +556,16 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS REDONDOS RESTAURADOS) ---
+    # --- PESTAÑA 6: ELECTRICIDAD ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
         if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
             st.write("*(Los velocímetros muestran la producción en azul y la línea oscura marca el objetivo estratégico)*")
             
-            # Convertimos los datos a diccionario para poder agruparlos en filas de 3
             plantas_records = df_elec.to_dict('records')
-            
-            # Bucle para crear una cuadrícula estricta de 3 columnas máximo por fila
             for i in range(0, len(plantas_records), 3):
                 cols_velocimetros = st.columns(3)
-                
                 for j in range(3):
                     if i + j < len(plantas_records):
                         row = plantas_records[i + j]
@@ -560,25 +576,23 @@ if check_password():
                             mode = "gauge+number+delta",
                             value = gen,
                             domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#1e293b'}}, # Letras oscuras
+                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#1e293b'}},
                             delta = {'reference': opt, 'increasing': {'color': "#16a34a"}, 'decreasing': {'color': "#dc2626"}, 'valueformat': ",.0f"},
-                            number = {'font': {'size': 28, 'color': '#1e293b'}, 'valueformat': ",.0f"}, # Números oscuros
+                            number = {'font': {'size': 28, 'color': '#1e293b'}, 'valueformat': ",.0f"},
                             gauge = {
                                 'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "#1e293b", 'tickfont': {'color': '#1e293b'}},
-                                'bar': {'color': "#3b82f6", 'thickness': 0.7}, # Barra azul
+                                'bar': {'color': "#3b82f6", 'thickness': 0.7}, 
                                 'bgcolor': "rgba(0,0,0,0)",
                                 'borderwidth': 1,
                                 'bordercolor': "#cbd5e1",
                                 'steps': [
-                                    {'range': [0, opt*0.8], 'color': '#fee2e2'},      # Rojo pastel 
-                                    {'range': [opt*0.8, opt], 'color': '#fef08a'},    # Amarillo pastel
-                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#dcfce3'} # Verde pastel
+                                    {'range': [0, opt*0.8], 'color': '#fee2e2'},      
+                                    {'range': [opt*0.8, opt], 'color': '#fef08a'},    
+                                    {'range': [opt, max(opt, gen)*1.2], 'color': '#dcfce3'} 
                                 ],
                                 'threshold': {'line': {'color': "#0f172a", 'width': 4}, 'thickness': 0.85, 'value': opt}
                             }
                         ))
-                        
-                        # Ajuste de márgenes para que respiren en forma redonda
                         fig_gauge.update_layout(margin=dict(t=60, b=20, l=20, r=20), height=320, paper_bgcolor="rgba(0,0,0,0)")
                         
                         with cols_velocimetros[j]:
