@@ -775,24 +775,54 @@ if check_password():
     # --- PESTAÑA 7: BASE DE DATOS COMPLETA (NUEVA) ---
     with tabs[6]:
         st.subheader("🗃️ Explorador de Datos Brutos (Subifor)")
-        st.markdown("Aquí puedes auditar el **archivo original completo** con todas las métricas secundarias, traducido para que no se pierda ni un solo dato.")
         
-        if not df_full.empty and 'Tipo_Operacion' in df_full.columns:
-            operaciones = ["Todas"] + list(df_full['Tipo_Operacion'].unique())
-            op_seleccionada = st.selectbox("Filtra por tipo de actividad:", operaciones)
+        tab_raw, tab_detective = st.tabs(["📄 Base de Datos Completa", "🕵️‍♂️ Detective Subifor (Para la IA)"])
+        
+        with tab_raw:
+            st.markdown("Aquí puedes auditar el **archivo original completo** con todas las métricas secundarias, traducido para que no se pierda ni un solo dato.")
             
-            df_mostrar = df_full if op_seleccionada == "Todas" else df_full[df_full['Tipo_Operacion'] == op_seleccionada]
+            if not df_full.empty and 'Tipo_Operacion' in df_full.columns:
+                operaciones = ["Todas"] + list(df_full['Tipo_Operacion'].unique())
+                op_seleccionada = st.selectbox("Filtra por tipo de actividad:", operaciones)
+                
+                df_mostrar = df_full if op_seleccionada == "Todas" else df_full[df_full['Tipo_Operacion'] == op_seleccionada]
+                
+                # Limpiar columnas 100% vacías para que sea más fácil de leer
+                df_mostrar = df_mostrar.dropna(axis=1, how='all')
+                df_mostrar = df_mostrar.loc[:, (df_mostrar != 0).any(axis=0)]
+                
+                st.dataframe(df_mostrar.style.format(thousands=","), hide_index=True, use_container_width=True)
+                
+                csv_full = convert_df(df_mostrar)
+                st.download_button(label="📥 Descargar esta vista completa a CSV", data=csv_full, file_name="subifor_completo.csv", mime='text/csv')
+            else:
+                st.info("Sube un archivo original de Subifor para habilitar esta vista de rayos X.")
+                
+        with tab_detective:
+            st.markdown("### Resumen de la estructura secreta de Subifor")
+            st.info("💡 **Instrucción:** Selecciona toda esta tabla, cópiala (Ctrl+C) y pégala en nuestro chat. Con esto, la IA sabrá exactamente qué datos esconde cada actividad sin tener que buscarlos uno a uno.")
             
-            # Limpiar columnas 100% vacías para que sea más fácil de leer
-            df_mostrar = df_mostrar.dropna(axis=1, how='all')
-            df_mostrar = df_mostrar.loc[:, (df_mostrar != 0).any(axis=0)]
-            
-            st.dataframe(df_mostrar.style.format(thousands=","), hide_index=True, use_container_width=True)
-            
-            csv_full = convert_df(df_mostrar)
-            st.download_button(label="📥 Descargar esta vista completa a CSV", data=csv_full, file_name="subifor_completo.csv", mime='text/csv')
-        else:
-            st.info("Sube un archivo original de Subifor para habilitar esta vista de rayos X.")
+            if not df_full.empty and 'actividad' in df_full.columns:
+                # Buscar la columna de nombre
+                name_col = None
+                for col in ['nombre_c', 'nombre', 'centro', 'planta', 'descripción', 'descripcion']:
+                    if col in df_full.columns: name_col = col; break
+                if not name_col and len(df_full.columns) >= 5: name_col = df_full.columns[4]
+                
+                if 'actividad1' not in df_full.columns: df_full['actividad1'] = 0
+                
+                resumen = []
+                for (act, act1), group in df_full.groupby(['actividad', 'actividad1']):
+                    cols_activas = []
+                    for col in [f'a{i}' for i in range(1, 14)]:
+                        if col in group.columns and pd.to_numeric(group[col], errors='coerce').fillna(0).sum() != 0:
+                            cols_activas.append(col)
+                    
+                    ejemplo = group[name_col].iloc[0] if name_col else "Desconocido"
+                    resumen.append({"Actividad": act, "Actividad1": act1, "Centro Ejemplo": ejemplo, "Columnas que tienen datos": ", ".join(cols_activas)})
+                
+                df_resumen = pd.DataFrame(resumen).sort_values(by=["Actividad", "Actividad1"])
+                st.dataframe(df_resumen, use_container_width=True, hide_index=True)
 
     # --- PESTAÑA 8: CONFIGURACIÓN DE OBJETIVOS ---
     with tabs[7]:
