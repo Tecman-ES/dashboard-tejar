@@ -179,7 +179,6 @@ def convert_df(df):
 def display_styled_table(df, area="", download_name="datos.csv"):
     if df.empty: return
     df_clean = df.dropna(axis=1, how='all')
-    
     if area == "Centrifugacion":
         def highlight(row):
             styles = [''] * len(row)
@@ -191,7 +190,6 @@ def display_styled_table(df, area="", download_name="datos.csv"):
         st.dataframe(df_clean.style.apply(highlight, axis=1).format(thousands=","), hide_index=True, use_container_width=True)
     else:
         st.dataframe(df_clean.style.format(thousands=","), hide_index=True, use_container_width=True)
-        
     csv_data = convert_df(df_clean)
     st.download_button(label="📥 Descargar a CSV", data=csv_data, file_name=download_name, mime='text/csv')
 
@@ -209,69 +207,113 @@ def fix_number(x):
             elif ',' in x: x = x.replace(',', '.')
     return x
 
-# --- MOTOR DE EXTRACCIÓN MULTI-PÁGINA ---
-def extract_table(df_dict, marker):
-    """Busca la tabla en TODAS las páginas del Excel"""
-    try:
-        # Iterar sobre todas las páginas (o la única si es CSV)
-        for sheet_name, df_raw in df_dict.items():
-            if df_raw.empty: continue
-            
-            col0 = df_raw.iloc[:, 0].astype(str).str.strip()
-            idx = df_raw[col0 == marker].index
-            
-            # Si encuentra el marcador en esta hoja, extrae la tabla
-            if len(idx) > 0:
-                start_idx = idx[0]
-                end_idx = len(df_raw)
-                for i in range(start_idx + 1, len(df_raw)):
-                    val = str(df_raw.iloc[i, 0]).strip()
-                    if val.startswith('#') and val != marker:
-                        end_idx = i
-                        break
-                        
-                df_sub = df_raw.iloc[start_idx+1:end_idx].copy()
-                df_sub = df_sub.replace(r'^\s*$', pd.NA, regex=True).dropna(how='all').reset_index(drop=True)
-                if df_sub.empty: return pd.DataFrame()
-                
-                headers = df_sub.iloc[0].fillna('').astype(str).str.strip()
-                df_sub.columns = headers
-                df_sub = df_sub.iloc[1:].reset_index(drop=True)
-                
-                valid_cols = [c for c in df_sub.columns if c != '']
-                if not valid_cols: return pd.DataFrame()
-                df_sub = df_sub[valid_cols]
-                
-                for col in df_sub.columns:
-                    df_sub[col] = df_sub[col].apply(fix_number)
-                    s_num = pd.to_numeric(df_sub[col], errors='coerce')
-                    if s_num.isna().sum() <= df_sub[col].isna().sum():
-                        df_sub[col] = s_num
-                        
-                return df_sub
-        
-        # Si llega aquí, es que no encontró el marcador en ninguna página
-        return pd.DataFrame()
-    except Exception as e:
-        return pd.DataFrame()
+def format_names(series):
+    """Limpia los nombres para que encajen con los objetivos (ej: 'EL TEJAR' -> 'El Tejar')"""
+    return series.astype(str).str.strip().str.title().str.replace('Mw', 'MW', regex=False)
 
+# --- TRADUCTOR MAGICO DE SUBIFOR ---
+def parse_subifor_csv(df_raw):
+    """Extrae automáticamente los datos del CSV bruto de Subifor"""
+    # 1. Limpieza de columnas
+    df_raw.columns = [str(c).lower().strip() for c in df_raw.columns]
+    for col in ['actividad', 'a1', 'a2', 'a3']:
+        if col in df_raw.columns:
+            df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0)
+            
+    # Actividad 1: Aportaciones (Orujo)
+    df_aport = df_raw[df_raw['actividad'] == 1][['nombre_c', 'a1', 'a2']].copy()
+    df_aport.rename(columns={'nombre_c': 'Planta', 'a1': 'Hoy (kg)', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_aport['Planta'] = format_names(df_aport['Planta'])
+    df_aport = df_aport[(df_aport['Hoy (kg)'] > 0) | (df_aport['Acum. Mensual'] > 0)]
+    
+    # Actividad 0: Existencias
+    df_ex = df_raw[df_raw['actividad'] == 0]
+    hueso = df_ex['a1'].sum() if 'a1' in df_ex.columns else 0
+    orujillo = df_ex['a2'].sum() if 'a2' in df_ex.columns else 0
+    hoja = df_ex['a3'].sum() if 'a3' in df_ex.columns else 0
+    df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [hueso, orujillo, hoja]})
+    
+    # Actividad 2 y 3: Centrifugación
+    df_c2 = df_raw[df_raw['actividad'] == 2][['nombre_c', 'a1']].rename(columns={'nombre_c': 'Centro', 'a1': 'Entrada_Alperujo'})
+    df_c3 = df_raw[df_raw['actividad'] == 3][['nombre_c', 'a1', 'a2']].rename(columns={'nombre_c': 'Centro', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'})
+    df_cent = pd.merge(df_c2, df_c3, on='Centro', how='outer').fillna(0)
+    df_cent['Centro'] = format_names(df_cent['Centro'])
+    df_cent['Rdto_Obtenido'] = (df_cent['Aceite_Prod'] / df_cent['Entrada_Alperujo'] * 100).round(2).replace([float('inf'), -float('inf')], 0).fillna(0)
+    df_cent['Acidez'] = pd.NA # En el csv base no hay acidez
+    
+    # Actividad 5: Secado (OGS)
+    df_secado = df_raw[df_raw['actividad'] == 5][['nombre_c', 'a1', 'a2']].copy()
+    df_secado.rename(columns={'nombre_c': 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_secado['Centro'] = format_names(df_secado['Centro'])
+    
+    # Actividad 6: Extracción (Aceite)
+    df_ext = df_raw[df_raw['actividad'] == 6][['nombre_c', 'a1', 'a2']].copy()
+    df_ext.rename(columns={'nombre_c': 'Extractora', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_ext['Extractora'] = format_names(df_ext['Extractora'])
+    
+    # Actividad 8: Electricidad
+    df_elec = df_raw[df_raw['actividad'] == 8][['nombre_c', 'a1', 'a2']].copy()
+    df_elec.rename(columns={'nombre_c': 'Planta', 'a1': 'Generada_kWh', 'a2': 'Acum. Mensual'}, inplace=True)
+    df_elec['Planta'] = format_names(df_elec['Planta'])
+    
+    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
+
+# --- MOTOR DE EXTRACCIÓN (DOBLE COMPATIBILIDAD) ---
 def load_data(uploaded_file):
     if uploaded_file is not None:
         try:
             uploaded_file.seek(0)
-            df_dict = {}
-            if uploaded_file.name.endswith('.csv'):
+            if uploaded_file.name.lower().endswith('.csv'):
                 content = uploaded_file.getvalue().decode('utf-8', errors='ignore')
-                sep = ','
-                first_line = content.split('\n')[0] if content else ''
-                if first_line.count(';') > first_line.count(','): sep = ';'
+                sep = ',' if content.count(',') > content.count(';') else ';'
+                
+                # Intentamos leer el archivo para ver si es el bruto de Subifor
+                try:
+                    df_raw = pd.read_csv(io.StringIO(content), delimiter=sep)
+                    cols = [str(c).lower().strip() for c in df_raw.columns]
+                    if 'actividad' in cols and 'a1' in cols:
+                        return parse_subifor_csv(df_raw) # 🚀 MODO SUBIFOR AUTOMÁTICO
+                except: pass
+                
+                # Si falla o no es Subifor, usamos la lectura de tablas antiguas
+                uploaded_file.seek(0)
                 reader = csv.reader(io.StringIO(content), delimiter=sep)
-                df_dict["Sheet1"] = pd.DataFrame(list(reader)).fillna('')
+                df_dict = {"Sheet1": pd.DataFrame(list(reader)).fillna('')}
             else:
                 raw_dict = pd.read_excel(uploaded_file, sheet_name=None, header=None, dtype=str)
-                for name, df in raw_dict.items():
-                    df_dict[name] = df.fillna('')
-            
+                df_dict = {name: df.fillna('') for name, df in raw_dict.items()}
+                
+            # Modo manual (Marcadores #)
+            def extract_table(df_d, marker):
+                for sheet_name, df_r in df_d.items():
+                    if df_r.empty: continue
+                    col0 = df_r.iloc[:, 0].astype(str).str.strip()
+                    idx = df_r[col0 == marker].index
+                    if len(idx) > 0:
+                        start_idx = idx[0]
+                        end_idx = len(df_r)
+                        for i in range(start_idx + 1, len(df_r)):
+                            val = str(df_r.iloc[i, 0]).strip()
+                            if val.startswith('#') and val != marker:
+                                end_idx = i
+                                break
+                        df_sub = df_r.iloc[start_idx+1:end_idx].copy()
+                        df_sub = df_sub.replace(r'^\s*$', pd.NA, regex=True).dropna(how='all').reset_index(drop=True)
+                        if df_sub.empty: return pd.DataFrame()
+                        headers = df_sub.iloc[0].fillna('').astype(str).str.strip()
+                        df_sub.columns = headers
+                        df_sub = df_sub.iloc[1:].reset_index(drop=True)
+                        valid_cols = [c for c in df_sub.columns if c != '']
+                        if not valid_cols: return pd.DataFrame()
+                        df_sub = df_sub[valid_cols]
+                        for col in df_sub.columns:
+                            df_sub[col] = df_sub[col].apply(fix_number)
+                            s_num = pd.to_numeric(df_sub[col], errors='coerce')
+                            if s_num.isna().sum() <= df_sub[col].isna().sum():
+                                df_sub[col] = s_num
+                        return df_sub
+                return pd.DataFrame()
+                
             df_aport = extract_table(df_dict, "# APORTACIONES")
             df_existencias = extract_table(df_dict, "# EXISTENCIAS")
             df_cent = extract_table(df_dict, "# CENTRIFUGACION")
@@ -280,51 +322,18 @@ def load_data(uploaded_file):
             df_elec = extract_table(df_dict, "# ELECTRICIDAD")
             
             return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
+            
         except Exception as e:
             st.error(f"Error procesando archivo: {e}")
             pass
             
-    # --- DATOS REALES INYECTADOS DEL PDF (PARTE 15/04/2026) ---
-    df_aport = pd.DataFrame({
-        "Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], 
-        "Hoy (kg)": [925240, 76600, 1000940, 173220, 114380, 152180, 54160, 113180], 
-        "Acum. Mensual": [11287480, 249122145, 10153600, 203101510, 3693860, 3070720, 87145800, 2395120]
-    })
-    
-    df_existencias = pd.DataFrame({
-        "Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], 
-        "Total Kilos": [27907170, 16641240, 57504471]
-    })
-    
-    df_cent = pd.DataFrame({
-        "Centro": ["Palenciana", "Marchena", "Cabra", "Baena"], 
-        "Entrada_Alperujo": [260545, 389980, 105026, 519981], 
-        "Aceite_Prod": [0, 2589, 778, 2056], 
-        "Rdto_Obtenido": [0.0, 0.53, 0.44, 0.39], 
-        "Acidez": [3.44, 2.92, 65.82, 9.63], 
-        "Acum. Mensual": [181512, 28296, 8850, 22616]
-    })
-    
-    df_secado = pd.DataFrame({
-        "Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], 
-        "Entrada_Alperujo": [366253, 442265, 461455, 621928, 695474, 527979, 163116, 740039], 
-        "OGS_Salida": [118760, 111280, 220520, 0, 244000, 0, 0, 15375]
-    })
-    
-    df_ext = pd.DataFrame({
-        "Extractora": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], 
-        "OGS_Procesado": [396860, 244000, 329510, 29100], 
-        "Salida_Orujillo": [404440, 229500, 268440, 0], 
-        "Aceite_Prod": [33900, 14500, 0, 0], 
-        "Acum. Mensual": [255100, 151900, 171100, 192398]
-    })
-    
-    df_elec = pd.DataFrame({
-        "Planta": ["Vetejar 12.6 MW", "Autogeneración 5.7 MW", "Baena 25 MW", "Algodonales 5.3 MW"], 
-        "Generada_kWh": [232793, 67876, 429248, 117821], 
-        "Acum. Mensual": [2868493, 833355, 6653469, 1507278]
-    })
-    
+    # --- DATOS REALES (15/04/2026) CUANDO NO HAY ARCHIVO SUBIDO ---
+    df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [925240, 76600, 1000940, 173220, 114380, 152180, 54160, 113180], "Acum. Mensual": [11287480, 249122145, 10153600, 203101510, 3693860, 3070720, 87145800, 2395120]})
+    df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27907170, 16641240, 57504471]})
+    df_cent = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [260545, 389980, 105026, 519981], "Aceite_Prod": [0, 2589, 778, 2056], "Rdto_Obtenido": [0.0, 0.53, 0.44, 0.39], "Acidez": [3.44, 2.92, 65.82, 9.63], "Acum. Mensual": [181512, 28296, 8850, 22616]})
+    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Entrada_Alperujo": [366253, 442265, 461455, 621928, 695474, 527979, 163116, 740039], "OGS_Salida": [118760, 111280, 220520, 0, 244000, 0, 0, 15375]})
+    df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], "OGS_Procesado": [396860, 244000, 329510, 29100], "Salida_Orujillo": [404440, 229500, 268440, 0], "Aceite_Prod": [33900, 14500, 0, 0], "Acum. Mensual": [255100, 151900, 171100, 192398]})
+    df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Autogeneración 5.7 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [232793, 67876, 429248, 117821], "Acum. Mensual": [2868493, 833355, 6653469, 1507278]})
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
 
 def filter_dataframe(df, column_name, planta_seleccionada):
@@ -365,9 +374,9 @@ if check_password():
         planta_activa = st.selectbox("📍 Filtro Global por Planta/Centro:", plantas_disponibles)
 
     if role == "oficina":
-        st.info(f"👋 **Modo Oficina:** Si subes el archivo ahora, quedará asignado al **{fecha_activa.strftime('%d/%m/%Y')}**.")
+        st.info(f"👋 **Modo Oficina:** Sube el archivo CSV exportado de Subifor para el día **{fecha_activa.strftime('%d/%m/%Y')}**.")
         with st.container():
-            archivo_subido = st.file_uploader("📂 Sube tu Archivo (.csv, .xlsx)", type=["xlsx", "xls", "csv"], label_visibility="visible")
+            archivo_subido = st.file_uploader("📂 Sube tu Archivo (CSV de Subifor)", type=["csv", "xlsx", "xls"], label_visibility="visible")
             if archivo_subido is not None:
                 save_file_to_disk(archivo_subido, fecha_activa)
                 st.success(f"✅ Archivo guardado correctamente en la base de datos histórica para el {fecha_activa.strftime('%d/%m/%Y')}.")
@@ -432,7 +441,7 @@ if check_password():
                 alertas = []
                 if not df_cent.empty and 'Acidez' in df_cent.columns:
                     for _, row in df_cent.iterrows():
-                        val_acidez = row['Acidez']
+                        val_acidez = row.get('Acidez', pd.NA)
                         if pd.notnull(val_acidez) and isinstance(val_acidez, (int, float)) and val_acidez > 3:
                             alertas.append(f"⚠️ **Centrifugación {row.get('Centro', '')}:** Acidez crítica detectada ({val_acidez}%)")
                 
@@ -443,7 +452,7 @@ if check_password():
                             alertas.append(f"✅ **Electricidad {row.get('Planta', '')}:** Rendimiento supera el objetivo estratégico.")
 
                 if not alertas:
-                    st.success(f"✅ **Operaciones Normales en {planta_activa}:** Todos los parámetros se encuentran dentro de los límites esperados hoy.")
+                    st.success(f"✅ **Operaciones Normales en {planta_activa}:** Todos los parámetros monitorizados están dentro de la normalidad.")
                 else:
                     for a in alertas:
                         if "⚠️" in a: st.error(a)
@@ -517,7 +526,7 @@ if check_password():
                 st.plotly_chart(fig_cent_comp, use_container_width=True)
             else: st.info("Faltan datos de Aceite Producido.")
         
-        with st.expander("📊 Ver tabla de datos detallada (Semaforización Activa)"):
+        with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_cent, "Centrifugacion", download_name="centrifugacion_tejar.csv")
 
     # --- PESTAÑA 4: SECADO ---
@@ -537,26 +546,16 @@ if check_password():
 
     # --- PESTAÑA 5: EXTRACCIÓN ---
     with tabs[4]:
-        col_izq, col_der = st.columns(2)
-        with col_izq:
-            st.subheader("Balance de Masas: OGS vs Orujillo (kg)")
-            if not df_ext.empty and 'Extractora' in df_ext.columns and 'OGS_Procesado' in df_ext.columns:
-                fig_bal = px.bar(df_ext, x="Extractora", y=["OGS_Procesado", "Salida_Orujillo"] if 'Salida_Orujillo' in df_ext.columns else "OGS_Procesado", barmode="group", color_discrete_sequence=['#84cc16', '#4d7c0f'])
-                fig_bal.update_layout(yaxis=dict(tickformat=","))
-                st.plotly_chart(fig_bal, use_container_width=True)
-            else: st.info(f"Sin datos de balance para: {planta_activa}")
+        st.subheader("Producción de Aceite vs Objetivo (kg)")
+        if not df_ext.empty and 'Aceite_Prod' in df_ext.columns:
+            fig_aceite = px.bar(df_ext, x="Extractora", y=["Aceite_Prod", "Obj_Aceite"] if 'Obj_Aceite' in df_ext.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
+            fig_aceite.update_layout(yaxis=dict(tickformat=","))
+            st.plotly_chart(fig_aceite, use_container_width=True)
             
-        with col_der:
-            st.subheader("Producción de Aceite vs Objetivo (kg)")
-            if not df_ext.empty and 'Aceite_Prod' in df_ext.columns:
-                fig_aceite = px.bar(df_ext, x="Extractora", y=["Aceite_Prod", "Obj_Aceite"] if 'Obj_Aceite' in df_ext.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
-                fig_aceite.update_layout(yaxis=dict(tickformat=","))
-                st.plotly_chart(fig_aceite, use_container_width=True)
-                
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
-    # --- PESTAÑA 6: ELECTRICIDAD ---
+    # --- PESTAÑA 6: ELECTRICIDAD (VELOCÍMETROS) ---
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
