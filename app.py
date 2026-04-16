@@ -249,29 +249,58 @@ def parse_subifor_csv(df_raw):
     hoja = df_ex['a3'].sum() if 'a3' in df_ex.columns else 0
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [hueso, orujillo, hoja]})
     
-    # Actividades 2/3 (Centrifugación) Y Actividades 4/5 con actividad1==1 (Deshidratación)
+    # Actividades 2/4 (Entradas a Centrifugación/Deshidratación)
     cond_in_cent = (df_raw['actividad'] == 2) | ((df_raw['actividad'] == 4) & (df_raw.get('actividad1', 0) == 1))
-    cond_out_cent = (df_raw['actividad'] == 3) | ((df_raw['actividad'] == 5) & (df_raw.get('actividad1', 0) == 1))
-    
     df_c2 = df_raw[cond_in_cent][[name_col, 'a1']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Entrada_Alperujo'])
-    df_c3 = df_raw[cond_out_cent][[name_col, 'a1', 'a2']].rename(columns={name_col: 'Centro', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Aceite_Prod', 'Acum. Mensual'])
+    
+    # Actividad 3 (Salida Centrifugación Normal)
+    cols_out_cent = [name_col]
+    rename_cent = {name_col: 'Centro'}
+    if 'a1' in df_raw.columns: cols_out_cent.append('a1'); rename_cent['a1'] = 'Aceite_Prod'
+    if 'a2' in df_raw.columns: cols_out_cent.append('a2'); rename_cent['a2'] = 'Acum. Mensual'
+    if 'a4' in df_raw.columns: cols_out_cent.append('a4'); rename_cent['a4'] = 'Acidez'
+    if 'a5' in df_raw.columns: cols_out_cent.append('a5'); rename_cent['a5'] = 'Acidez_Mensual'
+    if 'a6' in df_raw.columns: cols_out_cent.append('a6'); rename_cent['a6'] = 'Acidez_Campana'
+    if 'a7' in df_raw.columns: cols_out_cent.append('a7'); rename_cent['a7'] = 'Rdto_Obtenido'
+    if 'a8' in df_raw.columns: cols_out_cent.append('a8'); rename_cent['a8'] = 'Media_Mensual'
+    if 'a9' in df_raw.columns: cols_out_cent.append('a9'); rename_cent['a9'] = 'Rdto_Campana'
+    
+    df_c3_cent = df_raw[df_raw['actividad'] == 3][cols_out_cent].rename(columns=rename_cent)
+    
+    # Actividad 5 con actividad1 == 1 (Salida Deshidratación de Espejo)
+    cols_out_desh = [name_col]
+    rename_desh = {name_col: 'Centro'}
+    if 'a7' in df_raw.columns: cols_out_desh.append('a7'); rename_desh['a7'] = 'Aceite_Prod'
+    if 'a8' in df_raw.columns: cols_out_desh.append('a8'); rename_desh['a8'] = 'Acum. Mensual'
+    
+    df_c3_desh = df_raw[(df_raw['actividad'] == 5) & (df_raw.get('actividad1', 0) == 1)][cols_out_desh].rename(columns=rename_desh)
+    
+    # Unificamos salidas de Centrifugación y Deshidratación
+    df_c3 = pd.concat([df_c3_cent, df_c3_desh], ignore_index=True) if not df_c3_cent.empty or not df_c3_desh.empty else pd.DataFrame(columns=['Centro', 'Aceite_Prod', 'Acum. Mensual'])
     
     if not df_c2.empty or not df_c3.empty:
         df_cent = pd.merge(df_c2, df_c3, on='Centro', how='outer').fillna(0)
     else:
-        df_cent = pd.DataFrame(columns=['Centro', 'Entrada_Alperujo', 'Aceite_Prod', 'Acum. Mensual'])
+        df_cent = pd.DataFrame(columns=['Centro', 'Entrada_Alperujo', 'Aceite_Prod', 'Acum. Mensual', 'Acidez', 'Acidez_Mensual', 'Acidez_Campana', 'Rdto_Obtenido', 'Media_Mensual', 'Rdto_Campana'])
         
     df_cent['Centro'] = format_names(df_cent['Centro'])
     
     # Agrupamos por si Subifor nos manda Centrifugación y Deshidratación del mismo centro en filas separadas
     df_cent = df_cent.groupby('Centro', as_index=False).sum()
     
+    # Fallback: Si Subifor no trajo Rdto_Obtenido o es 0 (ej. en Deshidratación), lo calculamos como emergencia
+    if 'Rdto_Obtenido' not in df_cent.columns: df_cent['Rdto_Obtenido'] = 0.0
     if 'Entrada_Alperujo' in df_cent.columns and 'Aceite_Prod' in df_cent.columns:
-        df_cent['Rdto_Obtenido'] = (df_cent['Aceite_Prod'] / df_cent['Entrada_Alperujo'] * 100).round(2).replace([float('inf'), -float('inf')], 0).fillna(0)
-    else:
-        df_cent['Rdto_Obtenido'] = 0
-    df_cent['Acidez'] = pd.NA
-    df_cent['Media_Mensual'] = pd.NA
+        mask_rdto = (df_cent['Rdto_Obtenido'] == 0) & (df_cent['Entrada_Alperujo'] > 0)
+        if mask_rdto.any():
+            df_cent.loc[mask_rdto, 'Rdto_Obtenido'] = (df_cent.loc[mask_rdto, 'Aceite_Prod'] / df_cent.loc[mask_rdto, 'Entrada_Alperujo'] * 100).round(2)
+            
+    # Reemplazar ceros por NA en métricas de calidad para que no falseen las gráficas
+    for col in ['Acidez', 'Acidez_Mensual', 'Acidez_Campana', 'Media_Mensual', 'Rdto_Campana']:
+        if col not in df_cent.columns:
+            df_cent[col] = pd.NA
+        else:
+            df_cent[col] = df_cent[col].replace(0, pd.NA)
     
     # Actividad 5: Secado (OGS) - Excluimos las que son Deshidratación (actividad1 == 1)
     cond_secado = (df_raw['actividad'] == 5) & (df_raw.get('actividad1', 0) != 1)
