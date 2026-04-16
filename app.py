@@ -182,10 +182,11 @@ def display_styled_table(df, area="", download_name="datos.csv"):
     if area == "Centrifugacion":
         def highlight(row):
             styles = [''] * len(row)
-            if 'Acidez' in df.columns:
+            # CORRECCIÓN: Comprobamos si 'Acidez' existe en la tabla LIMPIA, no en la original
+            if 'Acidez' in df_clean.columns:
                 val = row['Acidez']
                 if pd.notnull(val) and isinstance(val, (int, float)) and val > 3:
-                    styles[df.columns.get_loc('Acidez')] = 'background-color: rgba(239, 68, 68, 0.4); color: white;'
+                    styles[df_clean.columns.get_loc('Acidez')] = 'background-color: rgba(239, 68, 68, 0.4); color: white;'
             return styles
         st.dataframe(df_clean.style.apply(highlight, axis=1).format(thousands=","), hide_index=True, use_container_width=True)
     else:
