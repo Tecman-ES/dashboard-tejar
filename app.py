@@ -308,10 +308,13 @@ def parse_subifor_csv(df_raw):
     df_secado.rename(columns={name_col: 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
     df_secado['Centro'] = format_names(df_secado['Centro'])
     
-    # Actividad 6: Extracción (Aceite)
-    df_ext = df_raw[df_raw['actividad'] == 6][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    # Actividades 6, 7 y 9: Extracción (Aceite) - Añadido Pedro Abad (Actividad 9)
+    cond_ext = df_raw['actividad'].isin([6, 7, 9])
+    df_ext = df_raw[cond_ext][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
     df_ext.rename(columns={name_col: 'Extractora', 'a1': 'Aceite_Prod', 'a2': 'Acum. Mensual'}, inplace=True)
-    df_ext['Extractora'] = format_names(df_ext['Extractora'])
+    # Limpiamos la palabra "Extractora" para que coincida con los objetivos (ej. "Extractora Baena" -> "Baena")
+    df_ext['Extractora'] = format_names(df_ext['Extractora']).str.replace('Extractora', '', case=False).str.strip()
+    df_ext = df_ext.groupby('Extractora', as_index=False).sum() # Agrupamos por si vienen separados
     
     # Actividad 8: Electricidad
     df_elec = df_raw[df_raw['actividad'] == 8][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
@@ -323,12 +326,21 @@ def parse_subifor_csv(df_raw):
     df_cons_secado.rename(columns={name_col: 'Centro', 'a1': 'Consumo_Hueso', 'a3': 'Consumo_Poda'}, inplace=True)
     df_cons_secado['Centro'] = format_names(df_cons_secado['Centro'])
 
-    df_cons_ext = df_raw[df_raw['actividad'] == 20][[name_col, 'a1']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1'])
-    df_cons_ext.rename(columns={name_col: 'Extractora', 'a1': 'Consumo_Hueso'}, inplace=True)
-    df_cons_ext['Extractora'] = format_names(df_cons_ext['Extractora'])
+    # Actividades 20 y 26: Consumo Extracción - Añadido Pedro Abad (Actividad 26)
+    cond_cons_ext = df_raw['actividad'].isin([20, 26])
+    df_cons_ext = df_raw[cond_cons_ext][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    df_cons_ext.rename(columns={name_col: 'Extractora', 'a1': 'Consumo_Hueso', 'a2': 'Consumo_Hueso_Mes'}, inplace=True)
+    # Limpiamos también en los consumos
+    df_cons_ext['Extractora'] = format_names(df_cons_ext['Extractora']).str.replace('Extractora', '', case=False).str.strip()
+    df_cons_ext = df_cons_ext.groupby('Extractora', as_index=False).sum() # Agrupamos para unificar Pedro Abad
 
     df_full = df_raw.copy()
-    act_map = {0: 'Existencias', 1: 'Aportaciones', 2: 'Centrif. (Alperujo)', 3: 'Centrif. (Aceite)', 5: 'Secado (OGS)', 6: 'Extracción (Aceite)', 8: 'Electricidad', 19: 'Consumo Secado', 20: 'Consumo Extracción'}
+    act_map = {
+        0: 'Existencias', 1: 'Aportaciones', 2: 'Centrif. (Alperujo)', 3: 'Centrif. (Aceite)', 
+        5: 'Secado (OGS)', 6: 'Extracción (El Tejar)', 7: 'Extracción (Resto)', 
+        8: 'Electricidad', 9: 'Extracción (Pedro Abad)', 19: 'Consumo Secado', 
+        20: 'Consumo Extracción', 26: 'Consumo Ext. (Pedro Abad)'
+    }
     if 'actividad' in df_full.columns:
         df_full['Tipo_Operacion'] = df_full['actividad'].map(act_map).fillna('Otra (' + df_full['actividad'].astype(str) + ')')
         
