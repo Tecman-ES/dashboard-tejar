@@ -281,7 +281,21 @@ def parse_subifor_csv(df_raw):
     df_elec.rename(columns={name_col: 'Planta', 'a1': 'Generada_kWh', 'a2': 'Acum. Mensual'}, inplace=True)
     df_elec['Planta'] = format_names(df_elec['Planta'])
     
-    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
+    # NUEVAS: Actividades de Consumo y Base de Datos Completa
+    df_cons_secado = df_raw[df_raw['actividad'] == 19][[name_col, 'a1', 'a3']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a3'])
+    df_cons_secado.rename(columns={name_col: 'Centro', 'a1': 'Consumo_Hueso', 'a3': 'Consumo_Poda'}, inplace=True)
+    df_cons_secado['Centro'] = format_names(df_cons_secado['Centro'])
+
+    df_cons_ext = df_raw[df_raw['actividad'] == 20][[name_col, 'a1']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1'])
+    df_cons_ext.rename(columns={name_col: 'Extractora', 'a1': 'Consumo_Hueso'}, inplace=True)
+    df_cons_ext['Extractora'] = format_names(df_cons_ext['Extractora'])
+
+    df_full = df_raw.copy()
+    act_map = {0: 'Existencias', 1: 'Aportaciones', 2: 'Centrif. (Alperujo)', 3: 'Centrif. (Aceite)', 5: 'Secado (OGS)', 6: 'Extracción (Aceite)', 8: 'Electricidad', 19: 'Consumo Secado', 20: 'Consumo Extracción'}
+    if 'actividad' in df_full.columns:
+        df_full['Tipo_Operacion'] = df_full['actividad'].map(act_map).fillna('Otra (' + df_full['actividad'].astype(str) + ')')
+    
+    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full
 
 # --- MOTOR DE EXTRACCIÓN (DOBLE COMPATIBILIDAD) ---
 def load_data(uploaded_file):
@@ -355,7 +369,7 @@ def load_data(uploaded_file):
             df_ext = extract_table(df_dict, "# EXTRACCION")
             df_elec = extract_table(df_dict, "# ELECTRICIDAD")
             
-            return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
+            return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
             
         except Exception as e:
             st.error(f"Error procesando archivo: {str(e)}")
@@ -368,7 +382,13 @@ def load_data(uploaded_file):
     df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Entrada_Alperujo": [366253, 442265, 461455, 621928, 695474, 527979, 163116, 740039], "OGS_Salida": [118760, 111280, 220520, 0, 244000, 0, 0, 15375]})
     df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], "OGS_Procesado": [396860, 244000, 329510, 29100], "Salida_Orujillo": [404440, 229500, 268440, 0], "Aceite_Prod": [33900, 14500, 0, 0], "Acum. Mensual": [255100, 151900, 171100, 192398]})
     df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Autogeneración 5.7 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [232793, 67876, 429248, 117821], "Acum. Mensual": [2868493, 833355, 6653469, 1507278]})
-    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec
+    
+    # Nuevos datos por defecto de Consumos y Raw Data
+    df_cons_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Consumo_Hueso": [1016300, 490000, 206280, 240000, 1072840, 368100, 398603, 449700], "Consumo_Poda": [0, 0, 0, 0, 19380, 231700, 0, 2239000]})
+    df_cons_ext = pd.DataFrame({"Extractora": ["El Tejar"], "Consumo_Hueso": [595000]})
+    df_full = pd.DataFrame({"Aviso": ["Sube el archivo CSV exportado de Subifor para visualizar la base de datos completa y sin filtros aquí."]})
+    
+    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full
 
 def filter_dataframe(df, column_name, planta_seleccionada):
     if df.empty or planta_seleccionada == "Todas" or column_name not in df.columns:
@@ -418,9 +438,9 @@ if check_password():
     archivo_compartido = load_file_from_disk(fecha_activa)
     if archivo_compartido is None:
         st.warning(f"⚠️ Aún no hay ningún parte subido para el día **{fecha_activa.strftime('%d/%m/%Y')}**. Por favor, contacte con oficina o seleccione otra fecha.")
-        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     else:
-        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec = load_data(archivo_compartido)
+        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full = load_data(archivo_compartido)
         
     df_obj = load_objectives()
     df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
@@ -432,7 +452,7 @@ if check_password():
     df_elec = filter_dataframe(df_elec, "Planta", planta_activa)
     df_obj_filtered = filter_dataframe(df_obj, "Planta", planta_activa)
 
-    tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
+    tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🗃️ Datos Brutos", "🎯 Mis Objetivos"])
 
     # --- PESTAÑA 1: VISIÓN GENERAL ---
     with tabs[0]:
@@ -575,6 +595,22 @@ if check_password():
         total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
         st.metric("Total Secado Generado", f"{total_ogs:,.0f} kg")
         
+        # NUEVO: Consumos Térmicos en Secado
+        if not df_cons_secado.empty:
+            st.markdown("#### 🔥 Consumo Térmico en Secaderos")
+            df_cons_secado_filt = filter_dataframe(df_cons_secado, "Centro", planta_activa)
+            if not df_cons_secado_filt.empty:
+                cols_cons = st.columns(2)
+                with cols_cons[0]:
+                    fig_hueso = px.bar(df_cons_secado_filt, x="Centro", y="Consumo_Hueso", title="Consumo de Hueso (kg)", color_discrete_sequence=['#78350f'])
+                    st.plotly_chart(fig_hueso, use_container_width=True)
+                with cols_cons[1]:
+                    if 'Consumo_Poda' in df_cons_secado_filt.columns and df_cons_secado_filt['Consumo_Poda'].sum() > 0:
+                        fig_poda = px.bar(df_cons_secado_filt, x="Centro", y="Consumo_Poda", title="Consumo de Poda Tr. (kg)", color_discrete_sequence=['#4d7c0f'])
+                        st.plotly_chart(fig_poda, use_container_width=True)
+                    else:
+                        st.info("Sin consumo de poda registrado hoy.")
+
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_secado, download_name="secado_tejar.csv")
 
@@ -586,6 +622,14 @@ if check_password():
             fig_aceite.update_layout(yaxis=dict(tickformat=","))
             st.plotly_chart(fig_aceite, use_container_width=True)
             
+        # NUEVO: Consumos Térmicos en Extracción
+        if not df_cons_ext.empty:
+            st.markdown("#### 🔥 Consumo Térmico en Extracción")
+            df_cons_ext_filt = filter_dataframe(df_cons_ext, "Extractora", planta_activa)
+            if not df_cons_ext_filt.empty:
+                fig_hueso_ext = px.bar(df_cons_ext_filt, x="Extractora", y="Consumo_Hueso", title="Consumo de Hueso (kg)", color_discrete_sequence=['#78350f'])
+                st.plotly_chart(fig_hueso_ext, use_container_width=True)
+                
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_ext, download_name="extraccion_tejar.csv")
 
@@ -638,8 +682,30 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_elec, download_name="electricidad_tejar.csv")
 
-    # --- PESTAÑA 7: CONFIGURACIÓN DE OBJETIVOS ---
+    # --- PESTAÑA 7: BASE DE DATOS COMPLETA (NUEVA) ---
     with tabs[6]:
+        st.subheader("🗃️ Explorador de Datos Brutos (Subifor)")
+        st.markdown("Aquí puedes auditar el **archivo original completo** con todas las métricas secundarias, traducido para que no se pierda ni un solo dato.")
+        
+        if not df_full.empty and 'Tipo_Operacion' in df_full.columns:
+            operaciones = ["Todas"] + list(df_full['Tipo_Operacion'].unique())
+            op_seleccionada = st.selectbox("Filtra por tipo de actividad:", operaciones)
+            
+            df_mostrar = df_full if op_seleccionada == "Todas" else df_full[df_full['Tipo_Operacion'] == op_seleccionada]
+            
+            # Limpiar columnas 100% vacías para que sea más fácil de leer
+            df_mostrar = df_mostrar.dropna(axis=1, how='all')
+            df_mostrar = df_mostrar.loc[:, (df_mostrar != 0).any(axis=0)]
+            
+            st.dataframe(df_mostrar.style.format(thousands=","), hide_index=True, use_container_width=True)
+            
+            csv_full = convert_df(df_mostrar)
+            st.download_button(label="📥 Descargar esta vista completa a CSV", data=csv_full, file_name="subifor_completo.csv", mime='text/csv')
+        else:
+            st.info("Sube un archivo original de Subifor para habilitar esta vista de rayos X.")
+
+    # --- PESTAÑA 8: CONFIGURACIÓN DE OBJETIVOS ---
+    with tabs[7]:
         st.subheader("🎯 Configuración Estratégica de Objetivos")
         st.info("Estos son los objetivos que se inyectan automáticamente en los gráficos y velocímetros.")
         
