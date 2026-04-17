@@ -59,7 +59,7 @@ st.markdown("""
     .delta-negative { color: #dc2626; } 
     .delta-neutral { color: #64748b; font-weight: 400; } 
     
-    /* Tarjetas Acumulado Mensual - Estilo Apilado (Punto 2) */
+    /* Tarjetas Acumulado Mensual - Estilo Apilado */
     .monthly-card {
         background-color: #ffffff;
         border-radius: 12px;
@@ -150,7 +150,6 @@ def load_objectives():
     if os.path.exists("objetivos_tejar.csv"):
         return pd.read_csv("objetivos_tejar.csv")
     else:
-        # Valores actualizados de Electricidad (358.33 MW -> 358,330 kW, etc.)
         return pd.DataFrame({
             "Area": ["Centrifugacion", "Centrifugacion", "Centrifugacion", "Secado", "Secado", "Secado", "Secado", "Secado", "Extraccion", "Extraccion", "Electricidad", "Electricidad", "Electricidad", "Electricidad"],
             "Planta": ["Marchena", "Cabra", "Baena", "Palenciana", "Marchena", "Cabra", "Baena", "Espejo", "El Tejar", "Baena", "Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW", "Autogeneración 5.7 MW"],
@@ -329,11 +328,18 @@ def parse_subifor_csv(df_raw):
     
     # Secado
     cond_secado = (df_raw['actividad'] == 5) & (df_raw.get('actividad1', 0) != 1)
-    df_secado = df_raw[cond_secado][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
-    df_secado.rename(columns={name_col: 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
-    df_secado['Centro'] = format_names(df_secado['Centro'])
+    df_secado_out = df_raw[cond_secado][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
+    df_secado_out.rename(columns={name_col: 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
     
-    # Extracción (Producción, Entrada Orujo y Ventas Mapeadas con Precisión)
+    # Entrada a secado
+    cond_sec_in = (df_raw['actividad'] == 4) & (df_raw.get('actividad1', 0) != 1)
+    df_sec_in = df_raw[cond_sec_in][[name_col, 'a1']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Entrada_Alperujo'])
+    
+    df_secado = pd.merge(df_sec_in, df_secado_out, on='Centro', how='outer').fillna(0)
+    if 'Centro' in df_secado.columns:
+        df_secado['Centro'] = format_names(df_secado['Centro'])
+    
+    # Extracción (Producción y Entrada)
     cond_ext = df_raw['actividad'].isin([6, 7, 9])
     df_ext_raw = df_raw[cond_ext].copy()
     
@@ -368,10 +374,12 @@ def parse_subifor_csv(df_raw):
             
             if act == 9:
                 ext_ventas.append({'Extractora': planta, 'Salida_Aceite': v1, 'Salida_Mes': v2})
-            elif "ENTRADA" in desc or "ORUJO" in desc:
-                ext_in.append({'Extractora': planta, 'OGS_Procesado': v1, 'OGS_Acum': v2})
-            else:
+            elif "ACEITE" in desc or "PROD" in desc:
+                # Localizamos explícitamente el texto de PROD. ACEITE
                 ext_prod.append({'Extractora': planta, 'Aceite_Prod': v1, 'Acum. Mensual': v2, 'Acum_Campana': v3, 'Optimo_Subifor': v12})
+            else:
+                # Si no es ventas ni aceite, es la entrada de Orujo
+                ext_in.append({'Extractora': planta, 'OGS_Procesado': v1, 'OGS_Acum': v2})
                 
     df_in = pd.DataFrame(ext_in).groupby('Extractora', as_index=False).sum() if ext_in else pd.DataFrame(columns=['Extractora'])
     df_prod = pd.DataFrame(ext_prod).groupby('Extractora', as_index=False).sum() if ext_prod else pd.DataFrame(columns=['Extractora'])
@@ -401,7 +409,7 @@ def parse_subifor_csv(df_raw):
     else:
         df_cons_secado = pd.DataFrame(columns=['Centro', 'Consumo_Hueso', 'Consumo_Orujillo', 'Consumo_Poda', 'Consumo_Hoja'])
 
-    # Consumo Extracción (Actividad 20 - Extrae Hueso, Orujillo, Poda, Hoja igual que Secado)
+    # Consumo Extracción
     df_cons_ext_raw = df_raw[df_raw['actividad'] == 20][cols_to_extract].copy()
     if not df_cons_ext_raw.empty:
         rename_dict = {name_col: 'Extractora', 'a1': 'Consumo_Hueso', 'a2': 'Consumo_Orujillo', 'a3': 'Consumo_Poda', 'a4': 'Consumo_Hoja'}
@@ -515,13 +523,13 @@ def load_data(uploaded_file):
     df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [925240, 76600, 1000940, 173220, 114380, 152180, 54160, 113180], "Acum. Mensual": [11287480, 249122145, 10153600, 203101510, 3693860, 3070720, 87145800, 2395120]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
     df_cent = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [260545, 461201, 67426, 631151], "Aceite_Prod": [0, 1870, 632, 771], "Rdto_Obtenido": [0.0, 0.41, 0.94, 0.12], "Acidez": [3.44, 2.92, 11.15, 7.81], "Acidez_Mensual": [3.50, 3.00, 10.00, 8.00], "Acidez_Campana": [3.40, 2.80, 9.50, 8.50], "Media_Mensual": [0.0, 0.46, 0.40, 0.30], "Rdto_Campana": [0.0, 0.46, 0.41, 0.41], "Acum. Mensual": [181512, 28296, 8850, 22616]})
-    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 621928, 457958, 527979, 163116, 157546], "OGS_Salida": [134400, 221140, 161380, 0, 110000, 0, 0, 22298]})
+    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 621928, 457958, 527979, 163116, 157546], "OGS_Salida": [134400, 221140, 161380, 0, 110000, 0, 0, 22298], "Acum. Mensual": [4241823, 10687000, 2426560, 3388880, 16195500, 2918540, 1183521, 2281940]})
     df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], "OGS_Procesado": [570400, 110000, 329510, 29100], "Aceite_Prod": [31800, 8300, 0, 0], "Acum. Mensual": [255100, 151900, 171100, 192398], "Optimo_Subifor": [43400, 18900, 0, 0], "Salida_Aceite": [12500, 5000, 0, 0]})
     df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Autogeneración 5.7 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Generada_kWh": [226344, 67876, 450634, 119229], "Acum. Mensual": [2868493, 833355, 6653469, 1507278]})
     
     df_cons_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Consumo_Hueso": [1016300, 490000, 206280, 240000, 1072840, 368100, 398603, 449700], "Consumo_Orujillo": [0, 233540, 0, 18800, 0, 0, 26820, 0], "Consumo_Poda": [0, 0, 0, 898800, 19380, 231700, 0, 2239000], "Consumo_Hoja": [0, 0, 0, 0, 0, 0, 0, 0]})
-    df_cons_ext = pd.DataFrame({"Extractora": ["El Tejar", "Pedro Abad"], "Consumo_Hueso": [595000, 240000], "Consumo_Poda": [0, 898800]})
-    df_full = pd.DataFrame({"Aviso": ["Sube un archivo CSV desde Subifor para visualizar los datos completos aquí."]})
+    df_cons_ext = pd.DataFrame({"Extractora": ["El Tejar", "Pedro Abad"], "Consumo_Hueso": [595000, 240000], "Consumo_Poda": [0, 898800], "Consumo_Orujillo": [0, 0], "Consumo_Hoja": [0, 0]})
+    df_full = pd.DataFrame()
     
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full
 
@@ -587,7 +595,8 @@ if check_password():
     df_elec = filter_dataframe(df_elec, "Planta", planta_activa)
     df_obj_filtered = filter_dataframe(df_obj, "Planta", planta_activa)
 
-    tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "🗜️ Extracción", "⚡ Electricidad", "🗃️ Datos Brutos", "🎯 Mis Objetivos"])
+    # NUEVO: Icono de matraz en la pestaña de Extracción
+    tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "⚗️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
     # --- PESTAÑA 1: VISIÓN GENERAL ---
     with tabs[0]:
@@ -610,6 +619,7 @@ if check_password():
                 target_cent = df_obj_filtered[df_obj_filtered['Area']=='Centrifugacion']['Objetivo_Diario'].sum()
                 target_ext = df_obj_filtered[df_obj_filtered['Area']=='Extraccion']['Objetivo_Diario'].sum()
                 
+                # MEJORA: Mismo estilo de encabezado en Markdown
                 st.markdown("#### 📅 Producción Diaria (Hoy)")
                 c1, c2, c3, c4 = st.columns(4)
                 with c1: st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
@@ -617,7 +627,9 @@ if check_password():
                 with c3: st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
                 with c4: st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
                 
-                st.markdown("<br>#### 📊 Producción Acumulada Mensual", unsafe_allow_html=True)
+                st.write("<br>", unsafe_allow_html=True)
+                
+                st.markdown("#### 📊 Producción Acumulada Mensual")
                 m1, m2, m3, m4 = st.columns(4)
                 with m1: st.markdown(get_monthly_card_html("Orujo Recibido", "📦", total_orujo_mes, "kg", ""), unsafe_allow_html=True)
                 with m2: st.markdown(get_monthly_card_html("Electricidad", "⚡", total_elec_mes, "kWh", "blue"), unsafe_allow_html=True)
@@ -692,10 +704,18 @@ if check_password():
                 cols_ex = st.columns(len(df_existencias))
                 for i, row in df_existencias.iterrows():
                     with cols_ex[i]:
-                        st.markdown(get_kpi_card_html(row['Material'], "🏗️", row['Total Kilos'], "kg", "", "blue"), unsafe_allow_html=True)
+                        mat_name = row['Material']
+                        # MEJORA: Iconos específicos por cada tipo de existencia
+                        icon = "📦"
+                        if "Hueso" in mat_name: icon = "🫒"
+                        elif "Orujillo" in mat_name: icon = "🤎"
+                        elif "Hoja" in mat_name: icon = "🍃"
+                        
+                        st.markdown(get_kpi_card_html(mat_name, icon, row['Total Kilos'], "kg", "", "blue"), unsafe_allow_html=True)
             else:
                 st.info("Sin datos de existencias.")
                 
+        # Tablas siempre abajo
         with st.expander("📊 Ver tabla de datos detallada (Aportaciones)"):
             display_styled_table(df_aport, download_name="aportaciones_tejar.csv")
 
@@ -727,7 +747,6 @@ if check_password():
             if not df_cent.empty and 'Rdto_Obtenido' in df_cent.columns:
                 fig_rdto = go.Figure()
                 
-                # Inteligencia de color: Verde si supera/iguala media, Rojo si está por debajo.
                 if 'Media_Mensual' in df_cent.columns and df_cent['Media_Mensual'].notna().any():
                     colors = ['#22c55e' if r >= m else '#ef4444' for r, m in zip(df_cent['Rdto_Obtenido'], df_cent['Media_Mensual'].fillna(0))]
                 else:
@@ -736,7 +755,6 @@ if check_password():
                 fig_rdto.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Rdto_Obtenido'], name='Rdto. Diario (%)', marker_color=colors, text=df_cent['Rdto_Obtenido'], texttemplate='%{text:.2f}%', textposition='auto'))
                 
                 if 'Media_Mensual' in df_cent.columns and df_cent['Media_Mensual'].notna().any():
-                    # Gráfico Divergente con marca negra cruzando la barra para ver la media mensual
                     fig_rdto.add_trace(go.Scatter(x=df_cent['Centro'], y=df_cent['Media_Mensual'], mode='markers+text', name='Media Mensual (%)', text=df_cent['Media_Mensual'], texttemplate='%{text:.2f}%', textposition='top center', textfont=dict(color='#0f172a', size=14, weight='bold'), marker=dict(symbol='line-ew', size=45, color='#0f172a', line=dict(width=3))))
                     
                 fig_rdto.update_layout(title="Rendimiento Diario vs Media Mensual (%)<br><sup><span style='color:#22c55e'>Verde</span>: Supera media | <span style='color:#ef4444'>Rojo</span>: Por debajo de media</sup>", yaxis_title="Rendimiento (%)", margin=dict(t=60))
@@ -770,12 +788,33 @@ if check_password():
         st.markdown(f"### 🏭 Total Orujo Graso Seco (OGS) Generado: **{total_ogs:,.0f} kg**")
         st.write("<hr>", unsafe_allow_html=True)
         
-        st.subheader("OGS Salida vs Objetivo (kg)")
-        if not df_secado.empty and 'Centro' in df_secado.columns and 'OGS_Salida' in df_secado.columns:
-            fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
-            fig_ogs.update_layout(yaxis=dict(tickformat=","))
-            st.plotly_chart(fig_ogs, use_container_width=True)
-        else: st.info(f"Sin datos de Secado para: {planta_activa}")
+        # MEJORA: Añadida gráfica de Alperujo Procesado junto con OGS Salida
+        col_s1, col_s2 = st.columns(2)
+        with col_s1:
+            st.subheader("Entrada Alperujo Procesado (kg)")
+            if not df_secado.empty and 'Entrada_Alperujo' in df_secado.columns and df_secado['Entrada_Alperujo'].sum() > 0:
+                fig_alperujo_sec = px.bar(df_secado, x="Centro", y="Entrada_Alperujo")
+                fig_alperujo_sec.update_traces(marker_color='#4ade80', texttemplate='%{y:,.0f}', textposition='outside')
+                fig_alperujo_sec.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_alperujo_sec, use_container_width=True)
+            else:
+                st.info("Sin datos de entrada de alperujo.")
+                
+        with col_s2:
+            st.subheader("OGS Salida vs Objetivo (kg)")
+            if not df_secado.empty and 'Centro' in df_secado.columns and 'OGS_Salida' in df_secado.columns:
+                fig_ogs = px.bar(df_secado, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
+                fig_ogs.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_ogs, use_container_width=True)
+            else: st.info(f"Sin datos de Secado para: {planta_activa}")
+
+        # MEJORA: Gráfica para el acumulado mensual de OGS
+        st.markdown("#### 📊 Acumulado Mensual (OGS)")
+        if not df_secado.empty and 'Acum. Mensual' in df_secado.columns and df_secado['Acum. Mensual'].sum() > 0:
+            fig_ogs_mes = px.bar(df_secado, x="Centro", y="Acum. Mensual")
+            fig_ogs_mes.update_traces(marker_color='#f59e0b', texttemplate='%{y:,.0f}', textposition='outside')
+            fig_ogs_mes.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+            st.plotly_chart(fig_ogs_mes, use_container_width=True)
     
         if not df_cons_secado.empty:
             st.markdown("#### 🔥 Consumo Térmico Mensual en Secaderos")
@@ -812,7 +851,6 @@ if check_password():
         with col_ext2:
             st.subheader("Producción de Aceite vs Objetivo (kg)")
             if not df_ext.empty and 'Aceite_Prod' in df_ext.columns:
-                # Usamos Optimo_Subifor que extraemos directamente de la columna a12, o el Obj_Aceite manual
                 opt_col = "Optimo_Subifor" if "Optimo_Subifor" in df_ext.columns and df_ext["Optimo_Subifor"].sum() > 0 else "Obj_Aceite"
                 fig_aceite = px.bar(df_ext, x="Extractora", y=["Aceite_Prod", opt_col] if opt_col in df_ext.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
                 fig_aceite.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
@@ -848,7 +886,10 @@ if check_password():
     with tabs[5]:
         st.subheader("Rendimiento Eléctrico Diario")
         
-        if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns and 'Optimo_kWh' in df_elec.columns:
+        # MEJORA: Objetivos por defecto inyectados en la lógica del gráfico
+        def_opts = {'BAENA': 358330, 'VETEJAR': 190270, 'ALGODONALES': 91400, 'AUTOGENERACIÓN': 60000, 'AUTOGENERACION': 60000}
+        
+        if not df_elec.empty and 'Planta' in df_elec.columns and 'Generada_kWh' in df_elec.columns:
             st.write("*(Los velocímetros muestran la producción en azul y la línea oscura marca el objetivo estratégico)*")
             
             plantas_records = df_elec.to_dict('records')
@@ -858,7 +899,15 @@ if check_password():
                     if i + j < len(plantas_records):
                         row = plantas_records[i + j]
                         gen = row['Generada_kWh'] if pd.notnull(row['Generada_kWh']) else 0
-                        opt = row['Optimo_kWh'] if pd.notnull(row['Optimo_kWh']) else 1 
+                        
+                        opt = row.get('Optimo_kWh', 0)
+                        if pd.isna(opt) or opt == 0:
+                            planta_str = str(row['Planta']).upper()
+                            for k, v in def_opts.items():
+                                if k in planta_str:
+                                    opt = v
+                                    break
+                        if opt == 0: opt = 1
                         
                         fig_gauge = go.Figure(go.Indicator(
                             mode = "gauge+number+delta",
@@ -893,58 +942,8 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_elec, download_name="electricidad_tejar.csv")
 
-    # --- PESTAÑA 7: DATOS BRUTOS ---
+    # --- PESTAÑA 7: OBJETIVOS ---
     with tabs[6]:
-        st.subheader("🗃️ Explorador de Datos Brutos (Subifor)")
-        
-        tab_raw, tab_detective = st.tabs(["📄 Base de Datos Completa", "🕵️‍♂️ Detective Subifor (Para la IA)"])
-        
-        with tab_raw:
-            st.markdown("Aquí puedes auditar el **archivo original completo** traducido para que no se pierda ninguna información.")
-            
-            if not df_full.empty and 'Tipo_Operacion' in df_full.columns:
-                operaciones = ["Todas"] + list(df_full['Tipo_Operacion'].unique())
-                op_seleccionada = st.selectbox("Filtra por tipo de actividad:", operaciones)
-                
-                df_mostrar = df_full if op_seleccionada == "Todas" else df_full[df_full['Tipo_Operacion'] == op_seleccionada]
-                
-                df_mostrar = df_mostrar.dropna(axis=1, how='all')
-                df_mostrar = df_mostrar.loc[:, (df_mostrar != 0).any(axis=0)]
-                
-                st.dataframe(df_mostrar.style.format(thousands=","), hide_index=True, use_container_width=True)
-                
-                csv_full = convert_df(df_mostrar)
-                st.download_button(label="📥 Descargar Base Completa (CSV)", data=csv_full, file_name="subifor_completo.csv", mime='text/csv')
-            else:
-                st.info("Sube un archivo de Subifor para activar esta vista.")
-                
-        with tab_detective:
-            st.markdown("### Resumen de la estructura interna de Subifor")
-            st.info("💡 **Instrucción:** Copia esta tabla y pásamela si necesitas que añada nuevos procesos ocultos.")
-            
-            if not df_full.empty and 'actividad' in df_full.columns:
-                name_col = None
-                for col in ['nombre_c', 'nombre', 'centro', 'planta', 'descripción', 'descripcion']:
-                    if col in df_full.columns: name_col = col; break
-                if not name_col and len(df_full.columns) >= 5: name_col = df_full.columns[4]
-                
-                if 'actividad1' not in df_full.columns: df_full['actividad1'] = 0
-                
-                resumen = []
-                for (act, act1), group in df_full.groupby(['actividad', 'actividad1']):
-                    cols_activas = []
-                    for col in [f'a{i}' for i in range(1, 14)]:
-                        if col in group.columns and pd.to_numeric(group[col], errors='coerce').fillna(0).sum() != 0:
-                            cols_activas.append(col)
-                    
-                    ejemplo = group[name_col].iloc[0] if name_col else "Desconocido"
-                    resumen.append({"Actividad": act, "Actividad1": act1, "Planta Ejemplo": ejemplo, "Columnas Activas": ", ".join(cols_activas)})
-                
-                df_resumen = pd.DataFrame(resumen).sort_values(by=["Actividad", "Actividad1"])
-                st.dataframe(df_resumen, use_container_width=True, hide_index=True)
-
-    # --- PESTAÑA 8: OBJETIVOS ---
-    with tabs[7]:
         st.subheader("🎯 Configuración Estratégica de Objetivos")
         st.info("Estos objetivos se inyectan automáticamente en los gráficos para medir el rendimiento.")
         
