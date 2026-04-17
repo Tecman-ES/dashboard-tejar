@@ -152,162 +152,7 @@ def format_names(series):
 def get_centro_from_planta(planta_name):
     """Asigna instalaciones específicas a su Centro Matriz"""
     p_upper = str(planta_name).upper()
-    if "BAENA" in p_upper: return "Baena"import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from datetime import date
-import io
-import csv
-import os
-
-# --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
-
-# --- ESTILOS PERSONALIZADOS (CSS) - SLATE LIGHT THEME ---
-st.markdown("""
-<style>
-    /* Fondo gris claro para no fatigar la vista */
-    .stApp { background-color: #f1f5f9; }
-    
-    /* Tarjetas de Noticias */
-    .news-card {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
-        border-left: 4px solid #eab308;
-        margin-bottom: 15px;
-        color: #0f172a;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e2e8f0;
-    }
-    .news-title { font-size: 1.1rem; font-weight: bold; color: #d97706; margin-bottom: 5px; }
-    .news-source { font-size: 0.8rem; color: #64748b; margin-bottom: 10px; }
-    .news-snippet { font-size: 0.9rem; line-height: 1.4; color: #334155; }
-    .read-more { color: #0284c7; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
-    .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
-    
-    /* Tarjetas KPI Principales */
-    .kpi-card {
-        background-color: #ffffff;
-        padding: 20px 10px 15px 10px;
-        border-radius: 12px;
-        text-align: center;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        border: 1px solid #e2e8f0;
-        border-top: 4px solid #65a30d; 
-        margin-bottom: 20px;
-        color: #0f172a;
-    }
-    .kpi-card.blue { border-top-color: #3b82f6; }
-    .kpi-card.yellow { border-top-color: #eab308; }
-    .kpi-card.orange { border-top-color: #f97316; }
-    
-    .kpi-icon { font-size: 32px; margin-bottom: 10px; }
-    .kpi-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
-    .kpi-value { color: #0f172a; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
-    .kpi-unit { font-size: 1rem; color: #94a3b8; font-weight: 500; }
-    
-    .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
-    .delta-positive { color: #16a34a; } 
-    .delta-negative { color: #dc2626; } 
-    .delta-neutral { color: #64748b; font-weight: 400; } 
-    
-    /* Tarjetas Acumulado Mensual - Estilo Apilado */
-    .monthly-card {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 18px 10px;
-        text-align: center;
-        border-top: 4px solid #94a3b8;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
-        border-left: 1px solid #e2e8f0;
-        border-right: 1px solid #e2e8f0;
-        border-bottom: 1px solid #e2e8f0;
-    }
-    .monthly-card.blue { border-top-color: #3b82f6; }
-    .monthly-card.yellow { border-top-color: #eab308; }
-    .monthly-card.orange { border-top-color: #f97316; }
-    
-    .m-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; display: block; }
-    .m-icon { font-size: 20px; margin-bottom: 5px; display: block; }
-    .m-value { color: #0f172a; font-size: 1.8rem; font-weight: 800; line-height: 1.1; }
-    .m-unit { font-size: 0.9rem; color: #94a3b8; font-weight: 500; }
-</style>
-""", unsafe_allow_html=True)
-
-# --- SISTEMA DE DOBLE LOGIN ---
-def check_password():
-    if "login_ok" not in st.session_state:
-        st.session_state["login_ok"] = False
-        st.session_state["role"] = None
-        
-    if not st.session_state["login_ok"]:
-        col1, col2, col3 = st.columns([1,2,1])
-        with col2:
-            if os.path.exists("Logo.png"):
-                st.image("Logo.png", width=250)
-            else:
-                st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
-            st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
-            usuario = st.text_input("Usuario (oficina / presidente)")
-            password = st.text_input("Contraseña", type="password")
-            if st.button("Entrar", use_container_width=True):
-                if usuario == "presidente" and password == "Tejar2026":
-                    st.session_state["login_ok"] = True
-                    st.session_state["role"] = "presidente"
-                    st.rerun()
-                elif usuario == "oficina" and password == "Tejar2026":
-                    st.session_state["login_ok"] = True
-                    st.session_state["role"] = "oficina"
-                    st.rerun()
-                else:
-                    st.error("Credenciales incorrectas")
-        return False
-    return True
-
-# --- FUNCIONES DE MEMORIA ---
-def save_file_to_disk(uploaded_file, date_obj):
-    date_str = date_obj.isoformat()
-    with open(f"parte_{date_str}.dat", "wb") as f:
-        f.write(uploaded_file.getvalue())
-    with open(f"parte_{date_str}_name.txt", "w") as f:
-        f.write(uploaded_file.name)
-    with open("ultima_fecha.txt", "w") as f:
-        f.write(date_str)
-
-def load_file_from_disk(date_obj):
-    date_str = date_obj.isoformat()
-    dat_path = f"parte_{date_str}.dat"
-    name_path = f"parte_{date_str}_name.txt"
-    if os.path.exists(dat_path) and os.path.exists(name_path):
-        with open(name_path, "r") as f:
-            name = f.read().strip()
-        with open(dat_path, "rb") as f:
-            content = f.read()
-        file_obj = io.BytesIO(content)
-        file_obj.name = name
-        return file_obj
-    return None
-
-def load_last_date():
-    if os.path.exists("ultima_fecha.txt"):
-        try:
-            with open("ultima_fecha.txt", "r") as f:
-                return date.fromisoformat(f.read().strip())
-        except: pass
-    return date.today()
-
-# --- MAPEO DE JERARQUÍAS ---
-def format_names(series):
-    return series.astype(str).str.strip().str.title().str.replace('Mw', 'MW', regex=False)
-
-def get_centro_from_planta(planta_name):
-    """Asigna instalaciones específicas a su Centro Matriz"""
-    p_upper = str(planta_name).upper()
     if "BAENA" in p_upper: return "Baena"
-    # Autogeneración, Vetejar y Algodonales pertenecen al complejo Palenciana
     if "VETEJAR" in p_upper or "ALGODONALES" in p_upper or "AUTOGENERACI" in p_upper: return "Palenciana"
     if "TEJAR" in p_upper: return "El Tejar"
     return format_names(pd.Series([planta_name])).iloc[0]
@@ -316,7 +161,6 @@ def get_centro_from_planta(planta_name):
 def load_objectives():
     if os.path.exists("objetivos_tejar.csv"):
         df = pd.read_csv("objetivos_tejar.csv")
-        # Asegurar que el CSV antiguo hereda la nueva columna Centro para el Smart Filter
         if "Centro" not in df.columns:
             df["Centro"] = df["Planta"].apply(get_centro_from_planta)
         return df
@@ -502,13 +346,19 @@ def parse_subifor_csv(df_raw):
     df_secado_out.rename(columns={name_col: 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
     
     cond_sec_in = (df_raw['actividad'] == 4) & (df_raw.get('actividad1', 0) != 1)
-    df_sec_in = df_raw[cond_sec_in][[name_col, 'a1']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Entrada_Alperujo'])
+    if 'a2' in df_raw.columns:
+        df_sec_in = df_raw[cond_sec_in][[name_col, 'a1', 'a2']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo', 'a2': 'Entrada_Alperujo_Mes'})
+    elif 'a1' in df_raw.columns:
+        df_sec_in = df_raw[cond_sec_in][[name_col, 'a1']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo'})
+        df_sec_in['Entrada_Alperujo_Mes'] = 0
+    else:
+        df_sec_in = pd.DataFrame(columns=['Centro', 'Entrada_Alperujo', 'Entrada_Alperujo_Mes'])
     
     df_secado = pd.merge(df_sec_in, df_secado_out, on='Centro', how='outer').fillna(0)
     if 'Centro' in df_secado.columns:
         df_secado['Centro'] = format_names(df_secado['Centro'])
     
-    # Extracción (Producción y Entrada)
+    # Extracción
     cond_ext = df_raw['actividad'].isin([6, 7, 9])
     df_ext_raw = df_raw[cond_ext].copy()
     
@@ -597,8 +447,17 @@ def parse_subifor_csv(df_raw):
     else:
         df_cons_ext = pd.DataFrame(columns=['Extractora', 'Consumo_Hueso', 'Consumo_Orujillo', 'Consumo_Poda', 'Consumo_Hoja', 'Centro'])
 
+    # Consumo Electricidad (Baena 25 MW y otras en actividades 15 y 21)
+    df_c15 = df_raw[df_raw['actividad'] == 15][[name_col, 'a1']].rename(columns={name_col: 'Planta', 'a1': 'Consumo_Biomasa'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1'])
+    df_c21 = df_raw[df_raw['actividad'] == 21][[name_col, 'a1']].rename(columns={name_col: 'Planta', 'a1': 'Consumo_Biomasa_Mes'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1'])
+    
+    df_cons_elec = pd.merge(df_c15, df_c21, on='Planta', how='outer').fillna(0)
+    if not df_cons_elec.empty:
+        df_cons_elec['Planta'] = format_names(df_cons_elec['Planta'])
+        df_cons_elec['Centro'] = df_cons_elec['Planta'].apply(get_centro_from_planta)
+
     df_full = pd.DataFrame()
-    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full
+    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_cons_elec, df_full
 
 # --- MOTOR DE EXTRACCIÓN MANUAL / PLANTILLAS ---
 def load_data(uploaded_file):
@@ -670,7 +529,7 @@ def load_data(uploaded_file):
             if not df_ext.empty and 'Extractora' in df_ext.columns: df_ext['Centro'] = df_ext['Extractora'].apply(get_centro_from_planta)
             if not df_elec.empty and 'Planta' in df_elec.columns: df_elec['Centro'] = df_elec['Planta'].apply(get_centro_from_planta)
             
-            return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+            return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
             
         except Exception as e:
             st.error(f"Error procesando archivo: {str(e)}")
@@ -680,15 +539,16 @@ def load_data(uploaded_file):
     df_aport = pd.DataFrame({"Planta": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Hoy (kg)": [925240, 76600, 1000940, 173220, 114380, 152180, 54160, 113180], "Acum. Mensual": [11287480, 249122145, 10153600, 203101510, 3693860, 3070720, 87145800, 2395120]})
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [27694950, 17150820, 57655131]})
     df_cent = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Baena"], "Entrada_Alperujo": [260545, 461201, 67426, 631151], "Aceite_Prod": [0, 1870, 632, 771], "Rdto_Obtenido": [0.0, 0.41, 0.94, 0.12], "Acidez": [3.44, 2.92, 11.15, 7.81], "Acidez_Mensual": [3.50, 3.00, 10.00, 8.00], "Acidez_Campana": [3.40, 2.80, 9.50, 8.50], "Media_Mensual": [0.0, 0.46, 0.40, 0.30], "Rdto_Campana": [0.0, 0.46, 0.41, 0.41], "Acum. Mensual": [181512, 28296, 8850, 22616]})
-    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 621928, 457958, 527979, 163116, 157546], "OGS_Salida": [134400, 221140, 161380, 0, 110000, 0, 0, 22298], "Acum. Mensual": [4241823, 10687000, 2426560, 3388880, 16195500, 2918540, 1183521, 2281940]})
+    df_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Entrada_Alperujo": [444668, 904664, 595175, 621928, 457958, 527979, 163116, 157546], "Entrada_Alperujo_Mes": [4446680, 9046640, 5951750, 6219280, 4579580, 5279790, 1631160, 1575460], "OGS_Salida": [134400, 221140, 161380, 0, 110000, 0, 0, 22298], "Acum. Mensual": [4241823, 10687000, 2426560, 3388880, 16195500, 2918540, 1183521, 2281940]})
     df_ext = pd.DataFrame({"Extractora": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], "Centro": ["El Tejar", "Baena", "Pedro Abad", "Espejo"], "OGS_Procesado": [570400, 110000, 329510, 29100], "Aceite_Prod": [31800, 8300, 0, 0], "Acum. Mensual": [255100, 151900, 171100, 192398], "Optimo_Subifor": [43400, 18900, 0, 0], "Salida_Aceite": [12500, 5000, 0, 0]})
     df_elec = pd.DataFrame({"Planta": ["Vetejar 12.6 MW", "Autogeneración 5.7 MW", "Baena 25 MW", "Algodonales 5.3 MW"], "Centro": ["Palenciana", "Palenciana", "Baena", "Palenciana"], "Generada_kWh": [226344, 67876, 450634, 119229], "Acum. Mensual": [2868493, 833355, 6653469, 1507278]})
     
     df_cons_secado = pd.DataFrame({"Centro": ["Palenciana", "Marchena", "Cabra", "Pedro Abad", "Baena", "Bogarre", "Mancha Real", "Espejo"], "Consumo_Hueso": [1016300, 490000, 206280, 240000, 1072840, 368100, 398603, 449700], "Consumo_Orujillo": [0, 233540, 0, 18800, 0, 0, 26820, 0], "Consumo_Poda": [0, 0, 0, 898800, 19380, 231700, 0, 2239000], "Consumo_Hoja": [0, 0, 0, 0, 0, 0, 0, 0]})
     df_cons_ext = pd.DataFrame({"Extractora": ["El Tejar", "Pedro Abad"], "Centro": ["El Tejar", "Pedro Abad"], "Consumo_Hueso": [595000, 240000], "Consumo_Poda": [0, 898800], "Consumo_Orujillo": [0, 0], "Consumo_Hoja": [0, 0]})
+    df_cons_elec = pd.DataFrame({"Planta": ["Baena 25 MW"], "Centro": ["Baena"], "Consumo_Biomasa": [66033], "Consumo_Biomasa_Mes": [1980990]})
     df_full = pd.DataFrame()
     
-    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full
+    return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_cons_elec, df_full
 
 # --- SMART FILTER MULTI-COLUMNA ---
 def filter_dataframe(df, column_names, planta_seleccionada):
@@ -745,9 +605,9 @@ if check_password():
     archivo_compartido = load_file_from_disk(fecha_activa)
     if archivo_compartido is None:
         st.warning(f"⚠️ Aún no hay ningún parte subido para el día **{fecha_activa.strftime('%d/%m/%Y')}**. Por favor, contacte con oficina o seleccione otra fecha.")
-        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_cons_elec, df_full = pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     else:
-        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full = load_data(archivo_compartido)
+        df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_cons_elec, df_full = load_data(archivo_compartido)
         
     df_obj = load_objectives()
     df_cent, df_secado, df_ext, df_elec = apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj)
@@ -839,7 +699,6 @@ if check_password():
                         else: st.success(a)
 
             with col_noticias:
-                # NUEVO: Widget Financiero del Aceite de Orujo
                 st.subheader("📈 Mercado: Aceite de Orujo")
                 
                 st.markdown("""
@@ -849,7 +708,6 @@ if check_password():
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Datos simulados de los últimos 7 días
                 df_precio = pd.DataFrame({
                     "Día": ["09/04", "10/04", "11/04", "12/04", "13/04", "14/04", "15/04"],
                     "Precio": [1.15, 1.16, 1.18, 1.17, 1.20, 1.23, 1.24]
@@ -1109,7 +967,6 @@ if check_password():
             st.write("*(Los velocímetros muestran la producción en azul y la línea oscura marca el objetivo estratégico)*")
             
             plantas_records = df_elec.to_dict('records')
-            # Cambiado de a saltos de 3, a saltos de 4, para que quepan todos en una línea
             for i in range(0, len(plantas_records), 4):
                 cols_velocimetros = st.columns(4)
                 for j in range(4):
@@ -1153,6 +1010,18 @@ if check_password():
                             st.plotly_chart(fig_gauge, use_container_width=True)
                 
         else: st.info(f"Faltan datos eléctricos para la planta: {planta_activa}")
+        
+        # NUEVO: Añadimos la gráfica del Consumo Eléctrico de Biomasa
+        if not df_cons_elec.empty:
+            df_cons_elec_filt = filter_dataframe(df_cons_elec, ["Centro", "Planta"], planta_activa)
+            if not df_cons_elec_filt.empty:
+                st.markdown("#### 🔥 Consumo Térmico Mensual en Generación (Biomasa)")
+                fig_cons_elec = px.bar(df_cons_elec_filt, x="Planta", y="Consumo_Biomasa_Mes", 
+                                       title="Acumulado Mensual de Combustible (kg)", 
+                                       color_discrete_sequence=["#78350f"])
+                fig_cons_elec.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
+                fig_cons_elec.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
+                st.plotly_chart(fig_cons_elec, use_container_width=True)
         
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_elec, download_name="electricidad_tejar.csv")
