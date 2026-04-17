@@ -152,6 +152,160 @@ def format_names(series):
 def get_centro_from_planta(planta_name):
     """Asigna instalaciones específicas a su Centro Matriz"""
     p_upper = str(planta_name).upper()
+    if "BAENA" in p_upper: return "Baena"import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import date
+import io
+import csv
+import os
+
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
+
+# --- ESTILOS PERSONALIZADOS (CSS) - SLATE LIGHT THEME ---
+st.markdown("""
+<style>
+    /* Fondo gris claro para no fatigar la vista */
+    .stApp { background-color: #f1f5f9; }
+    
+    /* Tarjetas de Noticias */
+    .news-card {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 12px;
+        border-left: 4px solid #eab308;
+        margin-bottom: 15px;
+        color: #0f172a;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e2e8f0;
+    }
+    .news-title { font-size: 1.1rem; font-weight: bold; color: #d97706; margin-bottom: 5px; }
+    .news-source { font-size: 0.8rem; color: #64748b; margin-bottom: 10px; }
+    .news-snippet { font-size: 0.9rem; line-height: 1.4; color: #334155; }
+    .read-more { color: #0284c7; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
+    .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
+    
+    /* Tarjetas KPI Principales */
+    .kpi-card {
+        background-color: #ffffff;
+        padding: 20px 10px 15px 10px;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid #e2e8f0;
+        border-top: 4px solid #65a30d; 
+        margin-bottom: 20px;
+        color: #0f172a;
+    }
+    .kpi-card.blue { border-top-color: #3b82f6; }
+    .kpi-card.yellow { border-top-color: #eab308; }
+    .kpi-card.orange { border-top-color: #f97316; }
+    
+    .kpi-icon { font-size: 32px; margin-bottom: 10px; }
+    .kpi-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+    .kpi-value { color: #0f172a; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
+    .kpi-unit { font-size: 1rem; color: #94a3b8; font-weight: 500; }
+    
+    .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
+    .delta-positive { color: #16a34a; } 
+    .delta-negative { color: #dc2626; } 
+    .delta-neutral { color: #64748b; font-weight: 400; } 
+    
+    /* Tarjetas Acumulado Mensual - Estilo Apilado */
+    .monthly-card {
+        background-color: #ffffff;
+        border-radius: 12px;
+        padding: 18px 10px;
+        text-align: center;
+        border-top: 4px solid #94a3b8;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
+        border-left: 1px solid #e2e8f0;
+        border-right: 1px solid #e2e8f0;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    .monthly-card.blue { border-top-color: #3b82f6; }
+    .monthly-card.yellow { border-top-color: #eab308; }
+    .monthly-card.orange { border-top-color: #f97316; }
+    
+    .m-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; display: block; }
+    .m-icon { font-size: 20px; margin-bottom: 5px; display: block; }
+    .m-value { color: #0f172a; font-size: 1.8rem; font-weight: 800; line-height: 1.1; }
+    .m-unit { font-size: 0.9rem; color: #94a3b8; font-weight: 500; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- SISTEMA DE DOBLE LOGIN ---
+def check_password():
+    if "login_ok" not in st.session_state:
+        st.session_state["login_ok"] = False
+        st.session_state["role"] = None
+        
+    if not st.session_state["login_ok"]:
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            if os.path.exists("Logo.png"):
+                st.image("Logo.png", width=250)
+            else:
+                st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
+            st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
+            usuario = st.text_input("Usuario (oficina / presidente)")
+            password = st.text_input("Contraseña", type="password")
+            if st.button("Entrar", use_container_width=True):
+                if usuario == "presidente" and password == "Tejar2026":
+                    st.session_state["login_ok"] = True
+                    st.session_state["role"] = "presidente"
+                    st.rerun()
+                elif usuario == "oficina" and password == "Tejar2026":
+                    st.session_state["login_ok"] = True
+                    st.session_state["role"] = "oficina"
+                    st.rerun()
+                else:
+                    st.error("Credenciales incorrectas")
+        return False
+    return True
+
+# --- FUNCIONES DE MEMORIA ---
+def save_file_to_disk(uploaded_file, date_obj):
+    date_str = date_obj.isoformat()
+    with open(f"parte_{date_str}.dat", "wb") as f:
+        f.write(uploaded_file.getvalue())
+    with open(f"parte_{date_str}_name.txt", "w") as f:
+        f.write(uploaded_file.name)
+    with open("ultima_fecha.txt", "w") as f:
+        f.write(date_str)
+
+def load_file_from_disk(date_obj):
+    date_str = date_obj.isoformat()
+    dat_path = f"parte_{date_str}.dat"
+    name_path = f"parte_{date_str}_name.txt"
+    if os.path.exists(dat_path) and os.path.exists(name_path):
+        with open(name_path, "r") as f:
+            name = f.read().strip()
+        with open(dat_path, "rb") as f:
+            content = f.read()
+        file_obj = io.BytesIO(content)
+        file_obj.name = name
+        return file_obj
+    return None
+
+def load_last_date():
+    if os.path.exists("ultima_fecha.txt"):
+        try:
+            with open("ultima_fecha.txt", "r") as f:
+                return date.fromisoformat(f.read().strip())
+        except: pass
+    return date.today()
+
+# --- MAPEO DE JERARQUÍAS ---
+def format_names(series):
+    return series.astype(str).str.strip().str.title().str.replace('Mw', 'MW', regex=False)
+
+def get_centro_from_planta(planta_name):
+    """Asigna instalaciones específicas a su Centro Matriz"""
+    p_upper = str(planta_name).upper()
     if "BAENA" in p_upper: return "Baena"
     # Autogeneración, Vetejar y Algodonales pertenecen al complejo Palenciana
     if "VETEJAR" in p_upper or "ALGODONALES" in p_upper or "AUTOGENERACI" in p_upper: return "Palenciana"
@@ -615,11 +769,15 @@ if check_password():
                 st.subheader(f"Resumen Ejecutivo - {planta_activa.upper()}")
                 
                 total_orujo = df_aport['Hoy (kg)'].sum() if not df_aport.empty and 'Hoy (kg)' in df_aport.columns else 0
+                total_alperujo_sec = df_secado['Entrada_Alperujo'].sum() if not df_secado.empty and 'Entrada_Alperujo' in df_secado.columns else 0
+                total_ogs_sec = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
                 total_elec = df_elec['Generada_kWh'].sum() if not df_elec.empty and 'Generada_kWh' in df_elec.columns else 0
                 total_aceite_cent = df_cent['Aceite_Prod'].sum() if not df_cent.empty and 'Aceite_Prod' in df_cent.columns else 0
                 total_aceite_ext = df_ext['Aceite_Prod'].sum() if not df_ext.empty and 'Aceite_Prod' in df_ext.columns else 0
                 
                 total_orujo_mes = df_aport['Acum. Mensual'].sum() if not df_aport.empty and 'Acum. Mensual' in df_aport.columns else 0
+                total_alperujo_sec_mes = df_secado['Entrada_Alperujo_Mes'].sum() if not df_secado.empty and 'Entrada_Alperujo_Mes' in df_secado.columns else 0
+                total_ogs_sec_mes = df_secado['Acum. Mensual'].sum() if not df_secado.empty and 'Acum. Mensual' in df_secado.columns else 0
                 total_elec_mes = df_elec['Acum. Mensual'].sum() if not df_elec.empty and 'Acum. Mensual' in df_elec.columns else 0
                 total_aceite_cent_mes = df_cent['Acum. Mensual'].sum() if not df_cent.empty and 'Acum. Mensual' in df_cent.columns else 0
                 total_aceite_ext_mes = df_ext['Acum. Mensual'].sum() if not df_ext.empty and 'Acum. Mensual' in df_ext.columns else 0
@@ -627,22 +785,35 @@ if check_password():
                 target_elec = df_obj_filtered[df_obj_filtered['Area']=='Electricidad']['Objetivo_Diario'].sum()
                 target_cent = df_obj_filtered[df_obj_filtered['Area']=='Centrifugacion']['Objetivo_Diario'].sum()
                 target_ext = df_obj_filtered[df_obj_filtered['Area']=='Extraccion']['Objetivo_Diario'].sum()
+                target_sec = df_obj_filtered[df_obj_filtered['Area']=='Secado']['Objetivo_Diario'].sum()
                 
                 st.markdown("#### 📅 Producción Diaria (Hoy)")
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, "kg", "<div class='kpi-delta delta-neutral'>Materia prima de entrada</div>", ""), unsafe_allow_html=True)
-                with c2: st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
-                with c3: st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
-                with c4: st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
+                c1, c2, c3 = st.columns(3)
+                with c1: st.markdown(get_kpi_card_html("Orujo Recibido", "📦", total_orujo, "kg", "<div class='kpi-delta delta-neutral'>Materia prima cruda</div>", ""), unsafe_allow_html=True)
+                with c2: st.markdown(get_kpi_card_html("Alperujo Procesado", "🔄", total_alperujo_sec, "kg", "<div class='kpi-delta delta-neutral'>Entrada a secaderos</div>", ""), unsafe_allow_html=True)
+                with c3: st.markdown(get_kpi_card_html("OGS Producido", "🏭", total_ogs_sec, "kg", get_delta_html(total_ogs_sec, target_sec), "orange"), unsafe_allow_html=True)
+                
+                st.write("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                
+                c4, c5, c6 = st.columns(3)
+                with c4: st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
+                with c5: st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
+                with c6: st.markdown(get_kpi_card_html("Electricidad", "⚡", total_elec, "kWh", get_delta_html(total_elec, target_elec), "blue"), unsafe_allow_html=True)
                 
                 st.write("<br>", unsafe_allow_html=True)
                 
                 st.markdown("#### 📊 Producción Acumulada Mensual")
-                m1, m2, m3, m4 = st.columns(4)
+                m1, m2, m3 = st.columns(3)
                 with m1: st.markdown(get_monthly_card_html("Orujo Recibido", "📦", total_orujo_mes, "kg", ""), unsafe_allow_html=True)
-                with m2: st.markdown(get_monthly_card_html("Electricidad", "⚡", total_elec_mes, "kWh", "blue"), unsafe_allow_html=True)
-                with m3: st.markdown(get_monthly_card_html("Aceite Centrif.", "💧", total_aceite_cent_mes, "kg", "yellow"), unsafe_allow_html=True)
-                with m4: st.markdown(get_monthly_card_html("Aceite Extrac.", "⚗️", total_aceite_ext_mes, "kg", "orange"), unsafe_allow_html=True)
+                with m2: st.markdown(get_monthly_card_html("Alperujo Procesado", "🔄", total_alperujo_sec_mes, "kg", ""), unsafe_allow_html=True)
+                with m3: st.markdown(get_monthly_card_html("OGS Producido", "🏭", total_ogs_sec_mes, "kg", "orange"), unsafe_allow_html=True)
+                
+                st.write("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                
+                m4, m5, m6 = st.columns(3)
+                with m4: st.markdown(get_monthly_card_html("Aceite Centrif.", "💧", total_aceite_cent_mes, "kg", "yellow"), unsafe_allow_html=True)
+                with m5: st.markdown(get_monthly_card_html("Aceite Extrac.", "⚗️", total_aceite_ext_mes, "kg", "orange"), unsafe_allow_html=True)
+                with m6: st.markdown(get_monthly_card_html("Electricidad", "⚡", total_elec_mes, "kWh", "blue"), unsafe_allow_html=True)
                 
                 st.write("<br>", unsafe_allow_html=True)
                 st.write("### 🤖 Análisis Operativo IA")
@@ -668,6 +839,44 @@ if check_password():
                         else: st.success(a)
 
             with col_noticias:
+                # NUEVO: Widget Financiero del Aceite de Orujo
+                st.subheader("📈 Mercado: Aceite de Orujo")
+                
+                st.markdown("""
+                <div style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center;">
+                    <div style="font-size: 0.85rem; color: #64748b; font-weight: bold; text-transform: uppercase;">Precio Medio (Crudo)</div>
+                    <div style="font-size: 2rem; font-weight: 800; color: #0f172a;">1.24 <span style="font-size: 1rem; color: #94a3b8;">€/kg</span> <span style="font-size: 1rem; color: #16a34a;">▲ +0.01</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Datos simulados de los últimos 7 días
+                df_precio = pd.DataFrame({
+                    "Día": ["09/04", "10/04", "11/04", "12/04", "13/04", "14/04", "15/04"],
+                    "Precio": [1.15, 1.16, 1.18, 1.17, 1.20, 1.23, 1.24]
+                })
+                
+                fig_precio = go.Figure()
+                fig_precio.add_trace(go.Scatter(
+                    x=df_precio["Día"], y=df_precio["Precio"],
+                    mode='lines+markers',
+                    line=dict(color='#eab308', width=3),
+                    marker=dict(size=6, color='#d97706'),
+                    fill='tozeroy',
+                    fillcolor='rgba(234, 179, 8, 0.1)',
+                    name="Precio €/kg"
+                ))
+                fig_precio.update_layout(
+                    margin=dict(l=0, r=0, t=10, b=20),
+                    height=120,
+                    xaxis=dict(showgrid=False, showticklabels=True, tickfont=dict(size=10, color='#64748b'), fixedrange=True),
+                    yaxis=dict(showgrid=False, showticklabels=False, range=[1.1, 1.3], fixedrange=True),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig_precio, use_container_width=True, config={'displayModeBar': False})
+
+                st.write("<br>", unsafe_allow_html=True)
                 st.subheader("📰 Actualidad del Sector")
                 st.markdown("""
                 <div class="news-card">
@@ -715,7 +924,7 @@ if check_password():
                         mat_name = row['Material']
                         icon = "📦"
                         if "Hueso" in mat_name: icon = "🫒"
-                        elif "Orujillo" in mat_name: icon = "🤎"
+                        elif "Orujillo" in mat_name: icon = "🟤"
                         elif "Hoja" in mat_name: icon = "🍃"
                         
                         st.markdown(get_kpi_card_html(mat_name, icon, row['Total Kilos'], "kg", "", "blue"), unsafe_allow_html=True)
