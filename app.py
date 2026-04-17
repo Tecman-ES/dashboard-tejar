@@ -10,45 +10,73 @@ import os
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
 
-# --- ESTILOS PERSONALIZADOS (CSS) ---
+# --- ESTILOS PERSONALIZADOS (CSS) - ADAPTADO A FONDO BLANCO ---
 st.markdown("""
 <style>
+    /* Tarjetas de Noticias Light Theme */
     .news-card {
-        background-color: #1e293b;
+        background-color: #ffffff;
         padding: 15px;
-        border-radius: 8px;
+        border-radius: 12px;
         border-left: 4px solid #eab308;
         margin-bottom: 15px;
-        color: #f8fafc;
+        color: #0f172a;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        border: 1px solid #f1f5f9;
     }
-    .news-title { font-size: 1.1rem; font-weight: bold; color: #fbbf24; margin-bottom: 5px; }
-    .news-source { font-size: 0.8rem; color: #94a3b8; margin-bottom: 10px; }
-    .news-snippet { font-size: 0.9rem; line-height: 1.4; }
-    .read-more { color: #38bdf8; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
+    .news-title { font-size: 1.1rem; font-weight: bold; color: #d97706; margin-bottom: 5px; }
+    .news-source { font-size: 0.8rem; color: #64748b; margin-bottom: 10px; }
+    .news-snippet { font-size: 0.9rem; line-height: 1.4; color: #334155; }
+    .read-more { color: #0284c7; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
     .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
     
+    /* Tarjetas KPI Principales Light Theme */
     .kpi-card {
-        background-color: #1e293b;
+        background-color: #ffffff;
         padding: 20px 10px 15px 10px;
-        border-radius: 10px;
+        border-radius: 12px;
         text-align: center;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        border: 1px solid #f1f5f9;
         border-top: 4px solid #65a30d; 
         margin-bottom: 20px;
+        color: #0f172a;
     }
     .kpi-card.blue { border-top-color: #3b82f6; }
     .kpi-card.yellow { border-top-color: #eab308; }
     .kpi-card.orange { border-top-color: #f97316; }
     
-    .kpi-icon { font-size: 28px; margin-bottom: 10px; }
-    .kpi-title { color: #94a3b8; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
-    .kpi-value { color: #f8fafc; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
-    .kpi-unit { font-size: 1rem; color: #cbd5e1; font-weight: 500; }
+    .kpi-icon { font-size: 32px; margin-bottom: 10px; }
+    .kpi-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+    .kpi-value { color: #0f172a; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
+    .kpi-unit { font-size: 1rem; color: #94a3b8; font-weight: 500; }
     
-    .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05); }
-    .delta-positive { color: #4ade80; } 
-    .delta-negative { color: #ef4444; } 
+    .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
+    .delta-positive { color: #16a34a; } 
+    .delta-negative { color: #dc2626; } 
     .delta-neutral { color: #64748b; font-weight: 400; } 
+    
+    /* Tarjetas Acumulado Mensual Horizontal Light Theme */
+    .monthly-card {
+        background-color: #f8fafc;
+        border-radius: 8px;
+        padding: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-left: 4px solid #94a3b8;
+        margin-bottom: 15px;
+        border-top: 1px solid #f1f5f9;
+        border-right: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f1f5f9;
+    }
+    .monthly-card.blue { border-left-color: #3b82f6; }
+    .monthly-card.yellow { border-left-color: #eab308; }
+    .monthly-card.orange { border-left-color: #f97316; }
+    
+    .m-title { color: #475569; font-size: 0.9rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .m-value { color: #0f172a; font-size: 1.4rem; font-weight: 800; }
+    .m-unit { font-size: 0.9rem; color: #64748b; font-weight: 500; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -144,7 +172,7 @@ def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
     df_elec = merge_obj(df_elec, "Planta", "Electricidad", "Optimo_kWh")
     return df_cent, df_secado, df_ext, df_elec
 
-# --- FUNCIONES DE LIMPIEZA Y FORMATO ---
+# --- FUNCIONES DE LIMPIEZA Y HTML ---
 def format_kpi_number(num):
     try:
         val = float(num)
@@ -169,6 +197,14 @@ def get_kpi_card_html(title, icon, val, unit, delta_html, css_class=""):
         <div class="kpi-title">{title}</div>
         <div class="kpi-value">{format_kpi_number(val)}<span class="kpi-unit"> {unit}</span></div>
         {delta_html}
+    </div>
+    """
+
+def get_monthly_card_html(title, icon, val, unit, css_class=""):
+    return f"""
+    <div class="monthly-card {css_class}">
+        <div class="m-title"><span>{icon}</span> {title}</div>
+        <div class="m-value">{format_kpi_number(val)}<span class="m-unit"> {unit}</span></div>
     </div>
     """
 
@@ -212,10 +248,8 @@ def format_names(series):
 
 # --- TRADUCTOR MÁGICO DE SUBIFOR ---
 def parse_subifor_csv(df_raw):
-    # 1. Limpieza de columnas
     df_raw.columns = [str(c).lower().strip() for c in df_raw.columns]
     
-    # 2. Buscar nombre de planta
     name_col = None
     for col in ['nombre_c', 'nombre', 'centro', 'planta', 'descripción', 'descripcion']:
         if col in df_raw.columns:
@@ -227,30 +261,28 @@ def parse_subifor_csv(df_raw):
         else:
             raise ValueError("No se pudo encontrar la columna de nombre de la planta.")
 
-    # 3. Asegurar que las columnas son numéricas hasta a13
     for col in ['actividad', 'actividad1'] + [f'a{i}' for i in range(1, 14)]:
         if col in df_raw.columns:
             df_raw[col] = pd.to_numeric(df_raw[col], errors='coerce').fillna(0)
             
-    # Actividad 1: Aportaciones (Orujo)
+    # Aportaciones
     df_aport = df_raw[df_raw['actividad'] == 1][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
     df_aport.rename(columns={name_col: 'Planta', 'a1': 'Hoy (kg)', 'a2': 'Acum. Mensual'}, inplace=True)
     df_aport['Planta'] = format_names(df_aport['Planta'])
     if not df_aport.empty:
         df_aport = df_aport[(df_aport['Hoy (kg)'] > 0) | (df_aport['Acum. Mensual'] > 0)]
     
-    # Actividad 0: Existencias
+    # Existencias
     df_ex = df_raw[df_raw['actividad'] == 0]
     hueso = df_ex['a1'].sum() if 'a1' in df_ex.columns else 0
     orujillo = df_ex['a2'].sum() if 'a2' in df_ex.columns else 0
     hoja = df_ex['a3'].sum() if 'a3' in df_ex.columns else 0
     df_existencias = pd.DataFrame({"Material": ["Hueso de Aceituna", "Orujillo", "Hoja de Olivo"], "Total Kilos": [hueso, orujillo, hoja]})
     
-    # Actividades 2/4: Entradas a Centrifugación/Deshidratación
+    # Centrifugación
     cond_in_cent = (df_raw['actividad'] == 2) | ((df_raw['actividad'] == 4) & (df_raw.get('actividad1', 0) == 1))
     df_c2 = df_raw[cond_in_cent][[name_col, 'a1']].rename(columns={name_col: 'Centro', 'a1': 'Entrada_Alperujo'}) if 'a1' in df_raw.columns else pd.DataFrame(columns=['Centro', 'Entrada_Alperujo'])
     
-    # Actividad 3: Salida Centrifugación Normal
     cols_out_cent = [name_col]
     rename_cent = {name_col: 'Centro'}
     if 'a1' in df_raw.columns: cols_out_cent.append('a1'); rename_cent['a1'] = 'Aceite_Prod'
@@ -264,15 +296,12 @@ def parse_subifor_csv(df_raw):
     
     df_c3_cent = df_raw[df_raw['actividad'] == 3][cols_out_cent].rename(columns=rename_cent)
     
-    # Actividad 5 (actividad1 == 1): Salida Deshidratación de Espejo
     cols_out_desh = [name_col]
     rename_desh = {name_col: 'Centro'}
     if 'a7' in df_raw.columns: cols_out_desh.append('a7'); rename_desh['a7'] = 'Aceite_Prod'
     if 'a8' in df_raw.columns: cols_out_desh.append('a8'); rename_desh['a8'] = 'Acum. Mensual'
     
     df_c3_desh = df_raw[(df_raw['actividad'] == 5) & (df_raw.get('actividad1', 0) == 1)][cols_out_desh].rename(columns=rename_desh)
-    
-    # Unificar salidas
     df_c3 = pd.concat([df_c3_cent, df_c3_desh], ignore_index=True) if not df_c3_cent.empty or not df_c3_desh.empty else pd.DataFrame(columns=['Centro', 'Aceite_Prod', 'Acum. Mensual'])
     
     if not df_c2.empty or not df_c3.empty:
@@ -290,18 +319,16 @@ def parse_subifor_csv(df_raw):
             df_cent.loc[mask_rdto, 'Rdto_Obtenido'] = (df_cent.loc[mask_rdto, 'Aceite_Prod'] / df_cent.loc[mask_rdto, 'Entrada_Alperujo'] * 100).round(2)
             
     for col in ['Acidez', 'Acidez_Mensual', 'Acidez_Campana', 'Media_Mensual', 'Rdto_Campana']:
-        if col not in df_cent.columns:
-            df_cent[col] = pd.NA
-        else:
-            df_cent[col] = df_cent[col].replace(0, pd.NA)
+        if col not in df_cent.columns: df_cent[col] = pd.NA
+        else: df_cent[col] = df_cent[col].replace(0, pd.NA)
     
-    # Actividad 5: Secado (OGS)
+    # Secado
     cond_secado = (df_raw['actividad'] == 5) & (df_raw.get('actividad1', 0) != 1)
     df_secado = df_raw[cond_secado][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
     df_secado.rename(columns={name_col: 'Centro', 'a1': 'OGS_Salida', 'a2': 'Acum. Mensual'}, inplace=True)
     df_secado['Centro'] = format_names(df_secado['Centro'])
     
-    # Actividades 6, 7, 9: Extracción de Aceite y Procesado de Orujo
+    # Extracción (SEPARANDO ENTRADA ORUJO Y PRODUCCIÓN ACEITE)
     cond_ext = df_raw['actividad'].isin([6, 7, 9])
     df_ext_raw = df_raw[cond_ext].copy()
     
@@ -324,26 +351,27 @@ def parse_subifor_csv(df_raw):
             if pd.isna(v1): v1 = 0
             if pd.isna(v2): v2 = 0
             
-            # Distinguir si es Entrada de Orujo o Producción de Aceite leyendo la columna de descripción
-            if "ACEITE" in desc or act == 9:
-                ext_data.append({'Extractora': planta, 'Aceite_Prod': v1, 'Acum. Mensual': v2})
-            else:
+            # Lógica inteligente: Si en la descripción pone ENTRADA u ORUJO, sabemos que es el OGS procesado.
+            # Si no, es la línea de Aceite.
+            if "ENTRADA" in desc or "ORUJO" in desc:
                 ext_data.append({'Extractora': planta, 'OGS_Procesado': v1, 'OGS_Acum': v2})
+            else:
+                ext_data.append({'Extractora': planta, 'Aceite_Prod': v1, 'Acum. Mensual': v2})
                 
+        # Agrupamos por extractora para que fusione la Entrada de Orujo y la Producción de Aceite en una sola fila por planta
         df_ext = pd.DataFrame(ext_data).groupby('Extractora', as_index=False).sum()
     else:
         df_ext = pd.DataFrame(columns=['Extractora', 'OGS_Procesado', 'Aceite_Prod', 'Acum. Mensual'])
     
-    # Actividad 8: Electricidad
+    # Electricidad
     df_elec = df_raw[df_raw['actividad'] == 8][[name_col, 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'a1', 'a2'])
     df_elec.rename(columns={name_col: 'Planta', 'a1': 'Generada_kWh', 'a2': 'Acum. Mensual'}, inplace=True)
     df_elec['Planta'] = format_names(df_elec['Planta'])
     
-    # Consumo Secado - Actividad 19 (Extrayendo todas las biomasas)
+    # Consumo Secado (Actividad 19)
     cols_to_extract = [name_col]
     for c in ['a1', 'a2', 'a3', 'a4']:
-        if c in df_raw.columns:
-            cols_to_extract.append(c)
+        if c in df_raw.columns: cols_to_extract.append(c)
     df_cons_secado = df_raw[df_raw['actividad'] == 19][cols_to_extract].copy()
     if not df_cons_secado.empty:
         rename_dict = {name_col: 'Centro', 'a1': 'Consumo_Hueso', 'a2': 'Consumo_Orujillo', 'a3': 'Consumo_Poda', 'a4': 'Consumo_Hoja'}
@@ -353,7 +381,7 @@ def parse_subifor_csv(df_raw):
     else:
         df_cons_secado = pd.DataFrame(columns=['Centro', 'Consumo_Hueso', 'Consumo_Orujillo', 'Consumo_Poda', 'Consumo_Hoja'])
 
-    # Consumo Extracción - Actividades 20 y 26
+    # Consumo Extracción
     cond_cons_ext = df_raw['actividad'].isin([20, 26])
     df_cons_ext = df_raw[cond_cons_ext][[name_col, 'actividad', 'actividad1', 'a1', 'a2']].copy() if 'a1' in df_raw.columns else pd.DataFrame(columns=[name_col, 'actividad', 'actividad1', 'a1', 'a2'])
     
@@ -374,33 +402,17 @@ def parse_subifor_csv(df_raw):
     # Base de Datos Completa
     df_full = df_raw.copy()
     act_map = {
-        0: 'Existencias', 
-        1: 'Aportaciones', 
-        2: 'Entrada Centrifugación', 
-        3: 'Salida Centrifugación', 
-        4: 'Entrada Secado/Repaso',
-        5: 'Salida Secado (OGS)', 
-        6: 'Extracción El Tejar', 
-        7: 'Extracción Baena/Espejo/P.Abad', 
-        8: 'Electricidad', 
-        9: 'Extracción P.Abad', 
-        12: 'Operaciones Baena (12)',
-        13: 'Operaciones Palenciana (13)',
-        14: 'Operaciones El Tejar (14)',
-        15: 'Operaciones Baena 25MW (15)',
-        18: 'Operaciones Cabra (18)',
-        19: 'Consumo Secado', 
-        20: 'Consumo Extracción El Tejar', 
-        21: 'Operaciones Adicionales (21)',
-        24: 'Operaciones Adicionales (24)',
-        25: 'Operaciones Adicionales (25)',
-        26: 'Consumo Extracción P.Abad',
-        27: 'Operaciones Adicionales (27)'
+        0: 'Existencias', 1: 'Aportaciones', 2: 'Entrada Centrifugación', 3: 'Salida Centrifugación', 
+        4: 'Entrada Secado/Repaso', 5: 'Salida Secado (OGS)', 6: 'Extracción El Tejar', 
+        7: 'Extracción Baena/Espejo/P.Abad', 8: 'Electricidad', 9: 'Extracción P.Abad', 
+        12: 'Operaciones Baena (12)', 13: 'Operaciones Palenciana (13)', 14: 'Operaciones El Tejar (14)',
+        15: 'Operaciones Baena 25MW (15)', 18: 'Operaciones Cabra (18)', 19: 'Consumo Secado', 
+        20: 'Consumo Extracción El Tejar', 21: 'Operaciones Adicionales (21)', 24: 'Operaciones Adicionales (24)',
+        25: 'Operaciones Adicionales (25)', 26: 'Consumo Extracción P.Abad', 27: 'Operaciones Adicionales (27)'
     }
     
     if 'actividad' in df_full.columns:
         df_full['Tipo_Operacion'] = df_full['actividad'].map(act_map).fillna("Otra (" + df_full['actividad'].astype(str) + ")")
-        
         mask_desh_in = (df_full['actividad'] == 4) & (df_full.get('actividad1', 0) == 1)
         mask_desh_out = (df_full['actividad'] == 5) & (df_full.get('actividad1', 0) == 1)
         df_full.loc[mask_desh_in, 'Tipo_Operacion'] = 'Deshidratación (Entrada)'
@@ -408,7 +420,7 @@ def parse_subifor_csv(df_raw):
     
     return df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_full
 
-# --- MOTOR DE EXTRACCIÓN (DOBLE COMPATIBILIDAD) ---
+# --- MOTOR DE EXTRACCIÓN MANUAL / PLANTILLAS ---
 def load_data(uploaded_file):
     if uploaded_file is not None:
         try:
@@ -586,12 +598,13 @@ if check_password():
                 with c3: st.markdown(get_kpi_card_html("Aceite Centrif.", "💧", total_aceite_cent, "kg", get_delta_html(total_aceite_cent, target_cent), "yellow"), unsafe_allow_html=True)
                 with c4: st.markdown(get_kpi_card_html("Aceite Extrac.", "⚗️", total_aceite_ext, "kg", get_delta_html(total_aceite_ext, target_ext), "orange"), unsafe_allow_html=True)
                 
-                st.markdown("<br>#### 📊 Acumulado Mensual", unsafe_allow_html=True)
+                # NUEVO DISEÑO ACUMULADO MENSUAL (Horizontal y elegante)
+                st.markdown("<br>#### 📊 Producción Acumulada Mensual", unsafe_allow_html=True)
                 m1, m2, m3, m4 = st.columns(4)
-                with m1: st.markdown(get_kpi_card_html("Orujo (Mes)", "📦", total_orujo_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", ""), unsafe_allow_html=True)
-                with m2: st.markdown(get_kpi_card_html("Electricidad (Mes)", "⚡", total_elec_mes, "kWh", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "blue"), unsafe_allow_html=True)
-                with m3: st.markdown(get_kpi_card_html("Aceite Centrif. (Mes)", "💧", total_aceite_cent_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "yellow"), unsafe_allow_html=True)
-                with m4: st.markdown(get_kpi_card_html("Aceite Extrac. (Mes)", "⚗️", total_aceite_ext_mes, "kg", "<div class='kpi-delta delta-neutral'>Total acumulado</div>", "orange"), unsafe_allow_html=True)
+                with m1: st.markdown(get_monthly_card_html("Orujo Recibido", "📦", total_orujo_mes, "kg", ""), unsafe_allow_html=True)
+                with m2: st.markdown(get_monthly_card_html("Electricidad", "⚡", total_elec_mes, "kWh", "blue"), unsafe_allow_html=True)
+                with m3: st.markdown(get_monthly_card_html("Aceite Centrif.", "💧", total_aceite_cent_mes, "kg", "yellow"), unsafe_allow_html=True)
+                with m4: st.markdown(get_monthly_card_html("Aceite Extrac.", "⚗️", total_aceite_ext_mes, "kg", "orange"), unsafe_allow_html=True)
                 
                 st.write("<br>", unsafe_allow_html=True)
                 st.write("### 🤖 Análisis Operativo IA")
@@ -657,7 +670,6 @@ if check_password():
         with st.expander("📊 Ver tabla de datos detallada (Aportaciones)"):
             display_styled_table(df_aport, download_name="aportaciones_tejar.csv")
             
-        # NUEVO CUADRO BONITO DE EXISTENCIAS
         if planta_activa == "Todas":
             st.markdown("---")
             st.subheader("📦 Estado General de Existencias")
@@ -665,7 +677,6 @@ if check_password():
                 cols_ex = st.columns(len(df_existencias))
                 for i, row in df_existencias.iterrows():
                     with cols_ex[i]:
-                        # Utilizamos las tarjetas visuales (KPIs) para mostrar los millones de kilos de forma espectacular
                         st.markdown(get_kpi_card_html(row['Material'], "🏗️", row['Total Kilos'], "kg", "", "blue"), unsafe_allow_html=True)
             else:
                 st.info("Sin datos de existencias.")
@@ -700,8 +711,8 @@ if check_password():
                 fig_rdto.add_trace(go.Bar(x=df_cent['Centro'], y=df_cent['Rdto_Obtenido'], name='Rendimiento (%)', marker_color='#3b82f6', text=df_cent['Rdto_Obtenido'], texttemplate='%{text:.2f}%', textposition='auto'))
                 
                 if 'Media_Mensual' in df_cent.columns and df_cent['Media_Mensual'].notna().any():
-                    # NUEVO: Hemos añadido text=... y mode='lines+markers+text' para que el número se vea siempre
-                    fig_rdto.add_trace(go.Scatter(x=df_cent['Centro'], y=df_cent['Media_Mensual'], mode='lines+markers+text', name='Media Mensual (%)', text=df_cent['Media_Mensual'], texttemplate='%{text:.2f}%', textposition='top center', line=dict(color='#f97316', width=3), marker=dict(size=10)))
+                    # MEJORA: Texto de media mensual en color oscuro y visible sobre la línea
+                    fig_rdto.add_trace(go.Scatter(x=df_cent['Centro'], y=df_cent['Media_Mensual'], mode='lines+markers+text', name='Media Mensual (%)', text=df_cent['Media_Mensual'], texttemplate='%{text:.2f}%', textposition='top center', textfont=dict(color='#0f172a', size=13), line=dict(color='#f97316', width=3), marker=dict(size=10)))
                     
                 fig_rdto.update_layout(title="Rendimiento Obtenido vs Media Mensual (%)", yaxis_title="Rendimiento (%)", margin=dict(t=40))
                 st.plotly_chart(fig_rdto, use_container_width=True)
@@ -730,9 +741,9 @@ if check_password():
 
     # --- PESTAÑA 4: SECADO ---
     with tabs[3]:
-        # NUEVO: Hemos movido el total del Secado generado encima de los gráficos, con un diseño más grande.
+        # MEJORA: Tipografía unificada para el Total Superior usando Markdown (mismo estilo que los subheaders)
         total_ogs = df_secado['OGS_Salida'].sum() if not df_secado.empty and 'OGS_Salida' in df_secado.columns else 0
-        st.metric("Total Orujo Graso Seco (OGS) Generado", f"{total_ogs:,.0f} kg")
+        st.markdown(f"### 🏭 Total Orujo Graso Seco (OGS) Generado: **{total_ogs:,.0f} kg**")
         st.write("<hr>", unsafe_allow_html=True)
         
         st.subheader("OGS Salida vs Objetivo (kg)")
@@ -742,7 +753,6 @@ if check_password():
             st.plotly_chart(fig_ogs, use_container_width=True)
         else: st.info(f"Sin datos de Secado para: {planta_activa}")
     
-        # NUEVO: Gráfico de consumos térmicos mensuales unificado y desglosado (Hueso, Orujillo, Poda, Hoja)
         if not df_cons_secado.empty:
             st.markdown("#### 🔥 Consumo Térmico Mensual en Secaderos")
             df_cons_secado_filt = filter_dataframe(df_cons_secado, "Centro", planta_activa)
@@ -764,17 +774,17 @@ if check_password():
 
     # --- PESTAÑA 5: EXTRACCIÓN ---
     with tabs[4]:
-        # NUEVO: Ahora extraemos de manera independiente la Entrada de Orujo y la Producción de Aceite.
+        # MEJORA: Gráficas separadas reales (Entrada de Orujo a Extractora y Producción de Aceite)
         col_ext1, col_ext2 = st.columns(2)
         with col_ext1:
-            st.subheader("Entrada de OGS (kg)")
+            st.subheader("Entrada de Orujo a Extractora (kg)")
             if not df_ext.empty and 'OGS_Procesado' in df_ext.columns and df_ext['OGS_Procesado'].sum() > 0:
                 fig_ogs_ext = px.bar(df_ext, x="Extractora", y="OGS_Procesado")
                 fig_ogs_ext.update_traces(marker_color='#8d6e63', texttemplate='%{y:,.0f}', textposition='outside')
                 fig_ogs_ext.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                 st.plotly_chart(fig_ogs_ext, use_container_width=True)
             else:
-                st.info("No hay datos de entrada de OGS.")
+                st.info("No hay datos de entrada de orujo registrados.")
                 
         with col_ext2:
             st.subheader("Producción de Aceite vs Objetivo (kg)")
@@ -813,11 +823,11 @@ if check_password():
                             mode = "gauge+number+delta",
                             value = gen,
                             domain = {'x': [0, 1], 'y': [0, 1]},
-                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#1e293b'}},
+                            title = {'text': str(row['Planta']), 'font': {'size': 20, 'color': '#0f172a'}},
                             delta = {'reference': opt, 'increasing': {'color': "#16a34a"}, 'decreasing': {'color': "#dc2626"}, 'valueformat': ",.0f"},
-                            number = {'font': {'size': 28, 'color': '#1e293b'}, 'valueformat': ",.0f"},
+                            number = {'font': {'size': 28, 'color': '#0f172a'}, 'valueformat': ",.0f"},
                             gauge = {
-                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "#1e293b", 'tickfont': {'color': '#1e293b'}},
+                                'axis': {'range': [None, max(opt, gen) * 1.2], 'tickwidth': 1, 'tickcolor': "#0f172a", 'tickfont': {'color': '#0f172a'}},
                                 'bar': {'color': "#3b82f6", 'thickness': 0.7}, 
                                 'bgcolor': "rgba(0,0,0,0)",
                                 'borderwidth': 1,
@@ -837,7 +847,8 @@ if check_password():
                 
         else: st.info(f"Faltan datos eléctricos para la planta: {planta_activa}")
         
-        st.metric("Total Generado Hoy", f"{total_elec:,.0f} kWh")
+        # Unificamos esta métrica también
+        st.markdown(f"### ⚡ Total Generado Hoy: **{total_elec:,.0f} kWh**")
         
         with st.expander("📊 Ver tabla de datos detallada"):
             display_styled_table(df_elec, download_name="electricidad_tejar.csv")
