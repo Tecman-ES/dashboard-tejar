@@ -101,7 +101,12 @@ def check_password():
     if not st.session_state["login_ok"]:
         col1, col2, col3 = st.columns([1,2,1])
         with col2:
-            st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
+            # Intenta cargar el logo real, si no está, usa el emoji
+            try:
+                st.image("logo.png", use_container_width=True)
+            except Exception:
+                st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
+                
             st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
             usuario = st.text_input("Usuario")
             password = st.text_input("Contraseña", type="password")
@@ -288,7 +293,11 @@ if check_password():
     
     col_logo, col_titulo, col_logout = st.columns([1, 8, 1])
     with col_logo:
-        st.markdown("<div style='font-size: 3rem; text-align: center;'>🏭</div>", unsafe_allow_html=True)
+        # Intenta cargar el logo real en la cabecera
+        try:
+            st.image("logo.png", use_container_width=True)
+        except Exception:
+            st.markdown("<div style='font-size: 3rem; text-align: center;'>🏭</div>", unsafe_allow_html=True)
     with col_titulo:
         st.title("Panel Operativo - Oleícola El Tejar SCA")
     with col_logout:
