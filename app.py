@@ -20,7 +20,7 @@ st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="ðŸ
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- ESTILOS PERSONALIZADOS (CSS) - SLATE LIGHT THEME ---
-# (mantÃ©n todos tus estilos CSS igual que estaban)
+st.markdown("""
 <style>
     /* Fondo gris claro para no fatigar la vista */
     .stApp { background-color: #f1f5f9; }
