@@ -295,7 +295,7 @@ if check_password():
     with col_logo:
         # Intenta cargar el logo real en la cabecera, más pequeñito
         try:
-            st.image("logo.png", width=80)
+            st.image("logo.png", width=50)
         except Exception:
             st.markdown("<div style='font-size: 3rem; text-align: center;'>🏭</div>", unsafe_allow_html=True)
     with col_titulo:
