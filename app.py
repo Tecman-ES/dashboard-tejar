@@ -20,7 +20,7 @@ st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="�
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- ESTILOS PERSONALIZADOS (CSS) - SLATE LIGHT THEME ---
-st.markdown("""
+# (mantén todos tus estilos CSS igual que estaban)
 <style>
     /* Fondo gris claro para no fatigar la vista */
     .stApp { background-color: #f1f5f9; }
@@ -103,19 +103,29 @@ def check_password():
         with col2:
             st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
             st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
-            usuario = st.text_input("Usuario (oficina / presidente)")
+            usuario = st.text_input("Usuario")
             password = st.text_input("Contraseña", type="password")
+            
             if st.button("Entrar", use_container_width=True):
-                if usuario == "presidente" and password == "Tejar2026":
+                # Extraer lista de usuarios desde la caja fuerte
+                users_env = os.getenv("USUARIOS_AUTORIZADOS", "")
+                usuarios_validos = {}
+                
+                if users_env:
+                    # El formato en la caja fuerte será: usuario:contraseña:rol,usuario2:contraseña2:rol2
+                    for u in users_env.split(","):
+                        partes = u.split(":")
+                        if len(partes) == 3:
+                            user, pwd, role = partes
+                            usuarios_validos[user.strip()] = {"pwd": pwd.strip(), "role": role.strip()}
+                
+                # Comprobar si el usuario existe y la contraseña cuadra
+                if usuario in usuarios_validos and password == usuarios_validos[usuario]["pwd"]:
                     st.session_state["login_ok"] = True
-                    st.session_state["role"] = "presidente"
-                    st.rerun()
-                elif usuario == "oficina" and password == "Tejar2026":
-                    st.session_state["login_ok"] = True
-                    st.session_state["role"] = "oficina"
+                    st.session_state["role"] = usuarios_validos[usuario]["role"]
                     st.rerun()
                 else:
-                    st.error("Credenciales incorrectas")
+                    st.error("Credenciales incorrectas o usuario no autorizado")
         return False
     return True
 
