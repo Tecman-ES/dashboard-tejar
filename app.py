@@ -101,9 +101,9 @@ def check_password():
     if not st.session_state["login_ok"]:
         col1, col2, col3 = st.columns([1,2,1])
         with col2:
-            # Intenta cargar el logo real, si no está, usa el emoji
+            # Intenta cargar el logo real, con un tamaño máximo fijo para que no se pixele
             try:
-                st.image("logo.png", use_container_width=True)
+                st.image("logo.png", width=250) 
             except Exception:
                 st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
                 
@@ -293,9 +293,9 @@ if check_password():
     
     col_logo, col_titulo, col_logout = st.columns([1, 8, 1])
     with col_logo:
-        # Intenta cargar el logo real en la cabecera
+        # Intenta cargar el logo real en la cabecera, más pequeñito
         try:
-            st.image("logo.png", use_container_width=True)
+            st.image("logo.png", width=80)
         except Exception:
             st.markdown("<div style='font-size: 3rem; text-align: center;'>🏭</div>", unsafe_allow_html=True)
     with col_titulo:
