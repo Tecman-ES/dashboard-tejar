@@ -486,7 +486,7 @@ if check_password():
             if not df_aport_filt.empty:
                 df_t = df_aport_filt.groupby(['fecha', 'Planta'], as_index=False)['Hoy (kg)'].sum().sort_values('fecha')
                 fig = px.line(df_t, x="fecha", y="Hoy (kg)", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Dark2, title="Aportaciones Diarias (kg)")
-                fig.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                fig.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                 show_chart(fig)
                 
         def draw_trend_centrifugacion():
@@ -495,16 +495,16 @@ if check_password():
                 c1, c2 = st.columns(2)
                 with c1:
                     f1 = px.line(df_t, x="fecha", y="Aceite_Prod", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid, title="Aceite Producido (kg)")
-                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(f1)
                 with c2:
                     f2 = px.line(df_t, x="fecha", y="Rdto_Obtenido", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid, title="Rendimiento Medio (%)")
-                    f2.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"))
+                    f2.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(f2)
                 
                 f3 = px.line(df_t, x="fecha", y="Acidez", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=['#ef4444' if is_v2 else '#ef4444'], title="Evolución Acidez Media (%)")
                 f3.add_hline(y=3, line_dash="dash", line_color="#ef4444", annotation_text="Límite (3%)")
-                f3.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"))
+                f3.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                 show_chart(f3)
 
         def draw_trend_secado():
@@ -513,11 +513,11 @@ if check_password():
                 c1, c2 = st.columns(2)
                 with c1:
                     f1 = px.line(df_t, x="fecha", y="Entrada_Alperujo", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism, title="Entrada Alperujo (kg)")
-                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(f1)
                 with c2:
                     f2 = px.line(df_t, x="fecha", y="OGS_Salida", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism, title="Producción OGS (kg)")
-                    f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                    f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(f2)
 
         def draw_trend_extraccion():
@@ -526,22 +526,22 @@ if check_password():
                 c1, c2 = st.columns(2)
                 with c1:
                     f1 = px.line(df_t, x="fecha", y="OGS_Procesado", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title="Entrada OGS Procesado (kg)")
-                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(f1)
                 with c2:
                     f2 = px.line(df_t, x="fecha", y="Aceite_Prod", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title="Producción Aceite (kg)")
-                    f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                    f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(f2)
                 
                 f3 = px.line(df_t, x="fecha", y="Salida_Aceite", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title="Salidas/Ventas Aceite (kg)")
-                f3.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                f3.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                 show_chart(f3)
 
         def draw_trend_electricidad():
             if not df_elec_filt.empty:
                 df_t = df_elec_filt.groupby(['fecha', 'Planta'], as_index=False)['Generada_kWh'].sum().sort_values('fecha')
                 f1 = px.line(df_t, x="fecha", y="Generada_kWh", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Set1, title="Generación Eléctrica Diaria (kWh)")
-                f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"))
+                f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                 show_chart(f1)
 
         # --- PESTAÑA 2: APORTACIONES Y EXISTENCIAS ---
@@ -620,11 +620,11 @@ if check_password():
             with col2:
                 if not df_cent_hoy.empty and 'Centro' in df_cent_hoy.columns and 'Aceite_Prod' in df_cent_hoy.columns:
                     fig_cent_comp = go.Figure()
-                    fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Aceite_Prod'], name='Producido', marker_color='#fbbf24', text=df_cent_hoy['Aceite_Prod'], texttemplate='%{text:,.0f}'))
+                    fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Aceite_Prod'], name='Producido', marker_color='#22c55e', text=df_cent_hoy['Aceite_Prod'], texttemplate='%{text:,.0f}'))
                     if 'Optimo' in df_cent_hoy.columns:
                         fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent_hoy['Optimo'], texttemplate='%{text:,.0f}'))
                     fig_cent_comp = optimize_bar(fig_cent_comp, len(df_cent_hoy['Centro'].unique()))
-                    fig_cent_comp.update_layout(title="Aceite Producido vs Óptimo Industrial (kg)", barmode='group', yaxis=dict(tickformat=","), margin=dict(t=40))
+                    fig_cent_comp.update_layout(title="Aceite Producido vs Óptimo Industrial (kg)", barmode='group', yaxis=dict(tickformat=","), margin=dict(t=40, b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(fig_cent_comp)
                 else: st.info("Faltan datos de Aceite Producido.")
                 
@@ -632,16 +632,44 @@ if check_password():
             with col3:
                 if not df_cent_hoy.empty and 'Rdto_Obtenido' in df_cent_hoy.columns:
                     fig_rdto = go.Figure()
+                    df_len = len(df_cent_hoy['Centro'].unique())
+                    w_bg = 0.4 if df_len <= 2 else 0.6
+                    w_fg = 0.2 if df_len <= 2 else 0.35
+                    
                     if 'Media_Mensual' in df_cent_hoy.columns and df_cent_hoy['Media_Mensual'].notna().any():
+                        fig_rdto.add_trace(go.Bar(
+                            x=df_cent_hoy['Centro'], 
+                            y=df_cent_hoy['Media_Mensual'].fillna(0), 
+                            name='Media Mensual (%)', 
+                            marker_color='#cbd5e1', 
+                            text=df_cent_hoy['Media_Mensual'].fillna(0), 
+                            texttemplate='%{text:.2f}%', 
+                            textposition='outside',
+                            width=w_bg
+                        ))
                         colors = ['#22c55e' if r >= m else '#ef4444' for r, m in zip(df_cent_hoy['Rdto_Obtenido'], df_cent_hoy['Media_Mensual'].fillna(0))]
                     else:
                         colors = ['#3b82f6'] * len(df_cent_hoy)
                         
-                    fig_rdto.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Rdto_Obtenido'], name='Rdto. Diario (%)', marker_color=colors, text=df_cent_hoy['Rdto_Obtenido'], texttemplate='%{text:.2f}%', textposition='auto'))
-                    if 'Media_Mensual' in df_cent_hoy.columns and df_cent_hoy['Media_Mensual'].notna().any():
-                        fig_rdto.add_trace(go.Scatter(x=df_cent_hoy['Centro'], y=df_cent_hoy['Media_Mensual'], mode='markers+text', name='Media Mensual (%)', text=df_cent_hoy['Media_Mensual'], texttemplate='%{text:.2f}%', textposition='top center', textfont=dict(color='#0f172a', size=14, weight='bold'), marker=dict(symbol='line-ew', size=45, color='#0f172a', line=dict(width=3))))
-                    fig_rdto = optimize_bar(fig_rdto, len(df_cent_hoy['Centro'].unique()))
-                    fig_rdto.update_layout(title="Rendimiento Diario vs Media Mensual (%)<br><sup><span style='color:#22c55e'>Verde</span>: Supera media | <span style='color:#ef4444'>Rojo</span>: Por debajo de media</sup>", yaxis_title="Rendimiento (%)", margin=dict(t=60))
+                    fig_rdto.add_trace(go.Bar(
+                        x=df_cent_hoy['Centro'], 
+                        y=df_cent_hoy['Rdto_Obtenido'], 
+                        name='Rdto. Diario (%)', 
+                        marker_color=colors, 
+                        text=df_cent_hoy['Rdto_Obtenido'], 
+                        texttemplate='%{text:.2f}%', 
+                        textposition='inside',
+                        insidetextanchor='middle',
+                        width=w_fg
+                    ))
+                    
+                    fig_rdto.update_layout(
+                        title="Rendimiento Diario vs Media Mensual (%)<br><sup><span style='color:#22c55e'>Verde</span>: Supera media | <span style='color:#ef4444'>Rojo</span>: Por debajo de media</sup>", 
+                        yaxis_title="Rendimiento (%)", 
+                        margin=dict(t=60, b=80),
+                        barmode='overlay',
+                        legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5)
+                    )
                     show_chart(fig_rdto)
                     
             with col4:
@@ -700,9 +728,9 @@ if check_password():
             with col_s2:
                 st.markdown("#### OGS Salida vs Objetivo (kg)")
                 if not df_secado_hoy.empty and 'Centro' in df_secado_hoy.columns and 'OGS_Salida' in df_secado_hoy.columns:
-                    fig_ogs = px.bar(df_secado_hoy, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado_hoy.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
+                    fig_ogs = px.bar(df_secado_hoy, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado_hoy.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#22c55e', '#94a3b8'])
                     fig_ogs = optimize_bar(fig_ogs, len(df_secado_hoy['Centro'].unique()))
-                    fig_ogs.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                    fig_ogs.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10, b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(fig_ogs)
                 else: st.info(f"Sin datos de Secado para: {planta_activa}")
 
@@ -761,9 +789,9 @@ if check_password():
                 st.markdown("#### Producción de Aceite vs Objetivo (kg)")
                 if not df_ext_hoy.empty and 'Aceite_Prod' in df_ext_hoy.columns:
                     opt_col = "Optimo_Subifor" if "Optimo_Subifor" in df_ext_hoy.columns and df_ext_hoy["Optimo_Subifor"].sum() > 0 else "Obj_Aceite"
-                    fig_aceite = px.bar(df_ext_hoy, x="Extractora", y=["Aceite_Prod", opt_col] if opt_col in df_ext_hoy.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
+                    fig_aceite = px.bar(df_ext_hoy, x="Extractora", y=["Aceite_Prod", opt_col] if opt_col in df_ext_hoy.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#22c55e', '#94a3b8'])
                     fig_aceite = optimize_bar(fig_aceite, len(df_ext_hoy['Extractora'].unique()))
-                    fig_aceite.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                    fig_aceite.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10, b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(fig_aceite)
                     
             if not df_ext_hoy.empty and 'Salida_Aceite' in df_ext_hoy.columns and df_ext_hoy['Salida_Aceite'].sum() > 0:
