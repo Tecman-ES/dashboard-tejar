@@ -525,7 +525,8 @@ if check_password():
                 st.subheader("📦 Estado General de Existencias")
                 if not df_existencias_hoy.empty:
                     cols_ex = st.columns(len(df_existencias_hoy))
-                    for i, row in df_existencias_hoy.iterrows():
+                    # Usamos enumerate para que cuente 0,1,2... independientemente del ID de la base de datos
+                    for i, (idx, row) in enumerate(df_existencias_hoy.iterrows()):
                         with cols_ex[i]:
                             mat_name = row['Material']
                             icon = "📦"
