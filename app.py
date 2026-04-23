@@ -363,8 +363,8 @@ if check_password():
 
         # 🌟 FUNCIÓN AUXILIAR: Evita que las barras sean gigantes cuando hay 1 o 2 datos
         def optimize_bar(fig, df_len):
-            if df_len == 1: fig.update_traces(width=0.25)
-            elif df_len == 2: fig.update_traces(width=0.4)
+            if df_len == 1: fig.update_traces(width=0.25, selector=dict(type='bar'))
+            elif df_len == 2: fig.update_traces(width=0.4, selector=dict(type='bar'))
             return fig
 
         # --- PESTAÑA 1: VISIÓN GENERAL ---
