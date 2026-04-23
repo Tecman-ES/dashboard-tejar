@@ -286,6 +286,22 @@ def filter_dataframe(df, column_names, planta_seleccionada):
             mask = mask | df[col].astype(str).str.contains(planta_seleccionada, case=False, na=False)
     return df[mask].reset_index(drop=True)
 
+# 🌟 FUNCIÓN NUEVA: Busca el último día real subido a Neon
+@st.cache_data(ttl=60)
+def get_latest_date_from_db():
+    try:
+        engine = create_engine(DATABASE_URL)
+        with engine.connect() as conn:
+            # Buscamos la fecha máxima (la más reciente) en la tabla de aportaciones
+            result = pd.read_sql("SELECT MAX(fecha) as max_fecha FROM aportaciones", conn)
+            max_date = result['max_fecha'].iloc[0]
+            if pd.notnull(max_date):
+                return pd.to_datetime(max_date).date()
+    except Exception as e:
+        print(f"Error obteniendo fecha máxima: {e}")
+    # Si hay un error o la base de datos está vacía, usamos el día de ayer como salvavidas
+    return date.today() - timedelta(days=1)
+
 # 🌟 FUNCIÓN AUXILIAR: Muestra gráficos en móviles sin bloquear el scroll
 def show_chart(fig):
     fig.update_layout(dragmode=False) # ¡LA MAGIA! Desactiva el arrastre interno para permitir el scroll de la página web
@@ -324,8 +340,9 @@ if check_password():
     
     col_date, col_filter = st.columns([1, 2])
     with col_date:
-        ayer = date.today() - timedelta(days=1)
-        fecha_activa = st.date_input("📅 Selecciona la Fecha del Reporte:", ayer)
+        # Por defecto muestra el último parte subido a la base de datos
+        ultimo_parte_real = get_latest_date_from_db()
+        fecha_activa = st.date_input("📅 Selecciona la Fecha del Reporte:", ultimo_parte_real)
     
     with col_filter:
         plantas_disponibles = ["Todas", "Baena", "Cabra", "Marchena", "Palenciana", "Pedro Abad", "Espejo", "Bogarre", "Mancha Real", "Algodonales", "Vetejar", "El Tejar"]
