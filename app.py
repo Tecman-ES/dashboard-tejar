@@ -361,6 +361,12 @@ if check_password():
 
         tabs = st.tabs(["👁️ Visión General", "📦 Aportaciones", "🌀 Centrifugación", "🔥 Secado", "⚗️ Extracción", "⚡ Electricidad", "🎯 Mis Objetivos"])
 
+        # 🌟 FUNCIÓN AUXILIAR: Evita que las barras sean gigantes cuando hay 1 o 2 datos
+        def optimize_bar(fig, df_len):
+            if df_len == 1: fig.update_traces(width=0.25)
+            elif df_len == 2: fig.update_traces(width=0.4)
+            return fig
+
         # --- PESTAÑA 1: VISIÓN GENERAL ---
         with tabs[0]:
             if not df_aport_hoy.empty or not df_elec_hoy.empty:
@@ -499,6 +505,7 @@ if check_password():
                 if not df_aport_hoy.empty and 'Planta' in df_aport_hoy.columns and 'Hoy (kg)' in df_aport_hoy.columns:
                     fig_aport = px.bar(df_aport_hoy, x="Planta", y="Hoy (kg)")
                     fig_aport.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8d6e63')
+                    fig_aport = optimize_bar(fig_aport, len(df_aport_hoy['Planta'].unique()))
                     fig_aport.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                     st.plotly_chart(fig_aport, use_container_width=True)
                 else: st.info("Faltan datos de Aportaciones diarias.")
@@ -508,6 +515,7 @@ if check_password():
                 if not df_aport_hoy.empty and 'Planta' in df_aport_hoy.columns and 'Acum. Mensual' in df_aport_hoy.columns:
                     fig_aport_mes = px.bar(df_aport_hoy, x="Planta", y="Acum. Mensual")
                     fig_aport_mes.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#60a5fa')
+                    fig_aport_mes = optimize_bar(fig_aport_mes, len(df_aport_hoy['Planta'].unique()))
                     fig_aport_mes.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                     st.plotly_chart(fig_aport_mes, use_container_width=True)
                 else: st.info("Faltan datos de Acumulado Mensual.")
@@ -538,7 +546,7 @@ if check_password():
                 st.subheader(f"📈 Análisis de Tendencia (Últimos 7 días) - {planta_activa}")
                 df_trend = df_aport_filt.groupby(['fecha', 'Planta'], as_index=False)['Hoy (kg)'].sum().sort_values('fecha')
                 fig_trend = px.line(df_trend, x="fecha", y="Hoy (kg)", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Dark2)
-                fig_trend.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                fig_trend.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(t=10))
                 st.plotly_chart(fig_trend, use_container_width=True)
 
         # --- PESTAÑA 3: CENTRIFUGACIÓN ---
@@ -550,6 +558,7 @@ if check_password():
                 if not df_cent_hoy.empty and 'Centro' in df_cent_hoy.columns and 'Entrada_Alperujo' in df_cent_hoy.columns:
                     fig_entrada_cent = px.bar(df_cent_hoy, x="Centro", y="Entrada_Alperujo", title="Entrada de Alperujo (kg)")
                     fig_entrada_cent.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#4ade80')
+                    fig_entrada_cent = optimize_bar(fig_entrada_cent, len(df_cent_hoy['Centro'].unique()))
                     fig_entrada_cent.update_layout(yaxis=dict(tickformat=","), margin=dict(t=40))
                     st.plotly_chart(fig_entrada_cent, use_container_width=True)
                 else: st.info("Faltan datos de Entrada de Alperujo.")
@@ -560,6 +569,7 @@ if check_password():
                     fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Aceite_Prod'], name='Producido', marker_color='#fbbf24', text=df_cent_hoy['Aceite_Prod'], texttemplate='%{text:,.0f}'))
                     if 'Optimo' in df_cent_hoy.columns:
                         fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent_hoy['Optimo'], texttemplate='%{text:,.0f}'))
+                    fig_cent_comp = optimize_bar(fig_cent_comp, len(df_cent_hoy['Centro'].unique()))
                     fig_cent_comp.update_layout(title="Aceite Producido vs Óptimo Industrial (kg)", barmode='group', yaxis=dict(tickformat=","), margin=dict(t=40))
                     st.plotly_chart(fig_cent_comp, use_container_width=True)
                 else: st.info("Faltan datos de Aceite Producido.")
@@ -576,6 +586,7 @@ if check_password():
                     fig_rdto.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Rdto_Obtenido'], name='Rdto. Diario (%)', marker_color=colors, text=df_cent_hoy['Rdto_Obtenido'], texttemplate='%{text:.2f}%', textposition='auto'))
                     if 'Media_Mensual' in df_cent_hoy.columns and df_cent_hoy['Media_Mensual'].notna().any():
                         fig_rdto.add_trace(go.Scatter(x=df_cent_hoy['Centro'], y=df_cent_hoy['Media_Mensual'], mode='markers+text', name='Media Mensual (%)', text=df_cent_hoy['Media_Mensual'], texttemplate='%{text:.2f}%', textposition='top center', textfont=dict(color='#0f172a', size=14, weight='bold'), marker=dict(symbol='line-ew', size=45, color='#0f172a', line=dict(width=3))))
+                    fig_rdto = optimize_bar(fig_rdto, len(df_cent_hoy['Centro'].unique()))
                     fig_rdto.update_layout(title="Rendimiento Diario vs Media Mensual (%)<br><sup><span style='color:#22c55e'>Verde</span>: Supera media | <span style='color:#ef4444'>Rojo</span>: Por debajo de media</sup>", yaxis_title="Rendimiento (%)", margin=dict(t=60))
                     st.plotly_chart(fig_rdto, use_container_width=True)
                     
@@ -586,6 +597,7 @@ if check_password():
                         colors = ['#ef4444' if val > 3 else '#22c55e' for val in df_acidez['Acidez']]
                         fig_acidez = go.Figure(data=[go.Bar(x=df_acidez['Centro'], y=df_acidez['Acidez'], marker_color=colors, text=df_acidez['Acidez'], texttemplate='%{text:.2f}%', textposition='auto')])
                         fig_acidez.add_hline(y=3, line_dash="dash", line_color="#ef4444", annotation_text="Límite (3%)", annotation_position="top right")
+                        fig_acidez = optimize_bar(fig_acidez, len(df_acidez['Centro'].unique()))
                         fig_acidez.update_layout(title="Control de Calidad: Acidez del Aceite (%)", yaxis_title="Acidez (%)", margin=dict(t=40))
                         st.plotly_chart(fig_acidez, use_container_width=True)
                 else:
@@ -595,6 +607,7 @@ if check_password():
             if not df_cent_hoy.empty and 'Acum. Mensual' in df_cent_hoy.columns:
                 fig_acum = px.bar(df_cent_hoy, x="Centro", y="Acum. Mensual", title="Aceite Acumulado Mensual (kg)")
                 fig_acum.update_traces(texttemplate='%{y:,.0f}', textposition='outside', marker_color='#8b5cf6')
+                fig_acum = optimize_bar(fig_acum, len(df_cent_hoy['Centro'].unique()))
                 fig_acum.update_layout(yaxis=dict(tickformat=","), margin=dict(t=40))
                 st.plotly_chart(fig_acum, use_container_width=True)
 
@@ -607,7 +620,7 @@ if check_password():
                 st.subheader(f"📈 Análisis de Tendencia Semanal de Aceite (kg) - {planta_activa}")
                 df_trend = df_cent_filt.groupby(['fecha', 'Centro'], as_index=False)['Aceite_Prod'].sum().sort_values('fecha')
                 fig_trend = px.line(df_trend, x="fecha", y="Aceite_Prod", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid)
-                fig_trend.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                fig_trend.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(t=10))
                 st.plotly_chart(fig_trend, use_container_width=True)
 
         # --- PESTAÑA 4: SECADO ---
@@ -622,6 +635,7 @@ if check_password():
                 if not df_secado_hoy.empty and 'Entrada_Alperujo' in df_secado_hoy.columns and df_secado_hoy['Entrada_Alperujo'].sum() > 0:
                     fig_alperujo_sec = px.bar(df_secado_hoy, x="Centro", y="Entrada_Alperujo")
                     fig_alperujo_sec.update_traces(marker_color='#4ade80', texttemplate='%{y:,.0f}', textposition='outside')
+                    fig_alperujo_sec = optimize_bar(fig_alperujo_sec, len(df_secado_hoy['Centro'].unique()))
                     fig_alperujo_sec.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                     st.plotly_chart(fig_alperujo_sec, use_container_width=True)
                 else:
@@ -631,6 +645,7 @@ if check_password():
                 st.subheader("OGS Salida vs Objetivo (kg)")
                 if not df_secado_hoy.empty and 'Centro' in df_secado_hoy.columns and 'OGS_Salida' in df_secado_hoy.columns:
                     fig_ogs = px.bar(df_secado_hoy, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado_hoy.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#d97706', '#fcd34d'])
+                    fig_ogs = optimize_bar(fig_ogs, len(df_secado_hoy['Centro'].unique()))
                     fig_ogs.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                     st.plotly_chart(fig_ogs, use_container_width=True)
                 else: st.info(f"Sin datos de Secado para: {planta_activa}")
@@ -639,6 +654,7 @@ if check_password():
             if not df_secado_hoy.empty and 'Acum. Mensual' in df_secado_hoy.columns and df_secado_hoy['Acum. Mensual'].sum() > 0:
                 fig_ogs_mes = px.bar(df_secado_hoy, x="Centro", y="Acum. Mensual")
                 fig_ogs_mes.update_traces(marker_color='#f59e0b', texttemplate='%{y:,.0f}', textposition='outside')
+                fig_ogs_mes = optimize_bar(fig_ogs_mes, len(df_secado_hoy['Centro'].unique()))
                 fig_ogs_mes.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                 st.plotly_chart(fig_ogs_mes, use_container_width=True)
         
@@ -652,6 +668,7 @@ if check_password():
                     fig_cons = px.bar(df_melted, x="Centro", y="Kilos", color="Material", 
                                       title="Acumulado Mensual de Biomasa (kg)", 
                                       color_discrete_map={"Hueso": "#78350f", "Orujillo": "#475569", "Poda": "#4d7c0f", "Hoja": "#84cc16"})
+                    fig_cons = optimize_bar(fig_cons, len(df_melted['Centro'].unique()))
                     st.plotly_chart(fig_cons, use_container_width=True)
                 else:
                     st.info("Sin consumos térmicos mensuales registrados.")
@@ -665,7 +682,7 @@ if check_password():
                 st.subheader(f"📈 Análisis de Tendencia Semanal de OGS (kg) - {planta_activa}")
                 df_trend = df_secado_filt.groupby(['fecha', 'Centro'], as_index=False)['OGS_Salida'].sum().sort_values('fecha')
                 fig_trend = px.line(df_trend, x="fecha", y="OGS_Salida", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism)
-                fig_trend.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                fig_trend.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(t=10))
                 st.plotly_chart(fig_trend, use_container_width=True)
 
         # --- PESTAÑA 5: EXTRACCIÓN ---
@@ -676,6 +693,7 @@ if check_password():
                 if not df_ext_hoy.empty and 'OGS_Procesado' in df_ext_hoy.columns and df_ext_hoy['OGS_Procesado'].sum() > 0:
                     fig_ogs_ext = px.bar(df_ext_hoy, x="Extractora", y="OGS_Procesado")
                     fig_ogs_ext.update_traces(marker_color='#8d6e63', texttemplate='%{y:,.0f}', textposition='outside')
+                    fig_ogs_ext = optimize_bar(fig_ogs_ext, len(df_ext_hoy['Extractora'].unique()))
                     fig_ogs_ext.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                     st.plotly_chart(fig_ogs_ext, use_container_width=True)
                 else:
@@ -686,6 +704,7 @@ if check_password():
                 if not df_ext_hoy.empty and 'Aceite_Prod' in df_ext_hoy.columns:
                     opt_col = "Optimo_Subifor" if "Optimo_Subifor" in df_ext_hoy.columns and df_ext_hoy["Optimo_Subifor"].sum() > 0 else "Obj_Aceite"
                     fig_aceite = px.bar(df_ext_hoy, x="Extractora", y=["Aceite_Prod", opt_col] if opt_col in df_ext_hoy.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#eab308', '#fef08a'])
+                    fig_aceite = optimize_bar(fig_aceite, len(df_ext_hoy['Extractora'].unique()))
                     fig_aceite.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                     st.plotly_chart(fig_aceite, use_container_width=True)
                     
@@ -693,6 +712,7 @@ if check_password():
                 st.markdown("#### 🚢 Ventas y Salidas de Aceite (kg)")
                 fig_ventas = px.bar(df_ext_hoy, x="Extractora", y="Salida_Aceite")
                 fig_ventas.update_traces(marker_color='#0ea5e9', texttemplate='%{y:,.0f}', textposition='outside')
+                fig_ventas = optimize_bar(fig_ventas, len(df_ext_hoy['Extractora'].unique()))
                 fig_ventas.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                 st.plotly_chart(fig_ventas, use_container_width=True)
                 
@@ -706,6 +726,7 @@ if check_password():
                     fig_cons_ext = px.bar(df_melted_ext, x="Extractora", y="Kilos", color="Material", 
                                       title="Acumulado Mensual de Biomasa (kg)", 
                                       color_discrete_map={"Hueso": "#78350f", "Orujillo": "#475569", "Poda": "#4d7c0f", "Hoja": "#84cc16"})
+                    fig_cons_ext = optimize_bar(fig_cons_ext, len(df_melted_ext['Extractora'].unique()))
                     st.plotly_chart(fig_cons_ext, use_container_width=True)
                 else:
                     st.info("Sin consumos térmicos mensuales registrados en Extracción.")
@@ -719,7 +740,7 @@ if check_password():
                 st.subheader(f"📈 Análisis de Tendencia Semanal de Extracción (kg) - {planta_activa}")
                 df_trend = df_ext_filt.groupby(['fecha', 'Extractora'], as_index=False)['Aceite_Prod'].sum().sort_values('fecha')
                 fig_trend = px.line(df_trend, x="fecha", y="Aceite_Prod", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel)
-                fig_trend.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                fig_trend.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(t=10))
                 st.plotly_chart(fig_trend, use_container_width=True)
 
         # --- PESTAÑA 6: ELECTRICIDAD ---
@@ -785,6 +806,7 @@ if check_password():
                                        title="Acumulado Mensual de Combustible (kg)", 
                                        color_discrete_sequence=["#78350f"])
                 fig_cons_elec.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
+                fig_cons_elec = optimize_bar(fig_cons_elec, len(df_cons_elec_hoy['Planta'].unique()))
                 fig_cons_elec.update_layout(yaxis=dict(tickformat=","), margin=dict(t=30))
                 st.plotly_chart(fig_cons_elec, use_container_width=True)
             
@@ -797,7 +819,7 @@ if check_password():
                 st.subheader(f"📈 Curva de Generación Eléctrica Semanal (kWh) - {planta_activa}")
                 df_trend = df_elec_filt.groupby(['fecha', 'Planta'], as_index=False)['Generada_kWh'].sum().sort_values('fecha')
                 fig_trend = px.line(df_trend, x="fecha", y="Generada_kWh", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Set1)
-                fig_trend.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10))
+                fig_trend.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(t=10))
                 st.plotly_chart(fig_trend, use_container_width=True)
 
         # --- PESTAÑA 7: OBJETIVOS ---
