@@ -106,26 +106,30 @@ def check_password():
                 st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
                 
             st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
-            usuario = st.text_input("Usuario")
-            password = st.text_input("Contraseña", type="password")
             
-            if st.button("Entrar", use_container_width=True):
-                users_env = os.getenv("USUARIOS_AUTORIZADOS", "")
-                usuarios_validos = {}
-                if users_env:
-                    for u in users_env.split(","):
-                        partes = u.split(":")
-                        if len(partes) == 3:
-                            user, pwd, role = partes
-                            usuarios_validos[user.strip()] = {"pwd": pwd.strip(), "role": role.strip()}
+            # 🌟 ENVOLVEMOS EN UN FORMULARIO PARA QUE LA TECLA "INTRO" FUNCIONE
+            with st.form("login_form"):
+                usuario = st.text_input("Usuario")
+                password = st.text_input("Contraseña", type="password")
+                submit = st.form_submit_button("Entrar", use_container_width=True)
                 
-                if usuario in usuarios_validos and password == usuarios_validos[usuario]["pwd"]:
-                    st.session_state["login_ok"] = True
-                    st.session_state["role"] = usuarios_validos[usuario]["role"]
-                    st.session_state["username"] = usuario
-                    st.rerun()
-                else:
-                    st.error("Credenciales incorrectas o usuario no autorizado")
+                if submit:
+                    users_env = os.getenv("USUARIOS_AUTORIZADOS", "")
+                    usuarios_validos = {}
+                    if users_env:
+                        for u in users_env.split(","):
+                            partes = u.split(":")
+                            if len(partes) == 3:
+                                user, pwd, role = partes
+                                usuarios_validos[user.strip()] = {"pwd": pwd.strip(), "role": role.strip()}
+                    
+                    if usuario in usuarios_validos and password == usuarios_validos[usuario]["pwd"]:
+                        st.session_state["login_ok"] = True
+                        st.session_state["role"] = usuarios_validos[usuario]["role"]
+                        st.session_state["username"] = usuario
+                        st.rerun()
+                    else:
+                        st.error("Credenciales incorrectas o usuario no autorizado")
         return False
     return True
 
@@ -620,9 +624,9 @@ if check_password():
             with col2:
                 if not df_cent_hoy.empty and 'Centro' in df_cent_hoy.columns and 'Aceite_Prod' in df_cent_hoy.columns:
                     fig_cent_comp = go.Figure()
-                    fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Aceite_Prod'], name='Producido', marker_color='#22c55e', text=df_cent_hoy['Aceite_Prod'], texttemplate='%{text:,.0f}'))
+                    fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Aceite_Prod'], name='Producido', marker_color='#22c55e', text=df_cent_hoy['Aceite_Prod'], texttemplate='%{text:,.0f}', textposition='outside'))
                     if 'Optimo' in df_cent_hoy.columns:
-                        fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent_hoy['Optimo'], texttemplate='%{text:,.0f}'))
+                        fig_cent_comp.add_trace(go.Bar(x=df_cent_hoy['Centro'], y=df_cent_hoy['Optimo'], name='Óptimo', marker_color='#94a3b8', text=df_cent_hoy['Optimo'], texttemplate='%{text:,.0f}', textposition='outside'))
                     fig_cent_comp = optimize_bar(fig_cent_comp, len(df_cent_hoy['Centro'].unique()))
                     fig_cent_comp.update_layout(title="Aceite Producido vs Óptimo Industrial (kg)", barmode='group', yaxis=dict(tickformat=","), margin=dict(t=40, b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(fig_cent_comp)
@@ -729,6 +733,7 @@ if check_password():
                 st.markdown("#### OGS Salida vs Objetivo (kg)")
                 if not df_secado_hoy.empty and 'Centro' in df_secado_hoy.columns and 'OGS_Salida' in df_secado_hoy.columns:
                     fig_ogs = px.bar(df_secado_hoy, x="Centro", y=["OGS_Salida", "Obj_OGS"] if 'Obj_OGS' in df_secado_hoy.columns else "OGS_Salida", barmode="group", color_discrete_sequence=['#22c55e', '#94a3b8'])
+                    fig_ogs.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
                     fig_ogs = optimize_bar(fig_ogs, len(df_secado_hoy['Centro'].unique()))
                     fig_ogs.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10, b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(fig_ogs)
@@ -752,6 +757,7 @@ if check_password():
                     fig_cons = px.bar(df_melted, x="Centro", y="Kilos", color="Material", 
                                       title="Acumulado Mensual de Biomasa (kg)", 
                                       color_discrete_map={"Hueso": "#78350f", "Orujillo": "#475569", "Poda": "#4d7c0f", "Hoja": "#84cc16"})
+                    fig_cons.update_traces(texttemplate='%{y:,.0f}', textposition='inside')
                     fig_cons = optimize_bar(fig_cons, len(df_melted['Centro'].unique()))
                     show_chart(fig_cons)
                 else:
@@ -790,6 +796,7 @@ if check_password():
                 if not df_ext_hoy.empty and 'Aceite_Prod' in df_ext_hoy.columns:
                     opt_col = "Optimo_Subifor" if "Optimo_Subifor" in df_ext_hoy.columns and df_ext_hoy["Optimo_Subifor"].sum() > 0 else "Obj_Aceite"
                     fig_aceite = px.bar(df_ext_hoy, x="Extractora", y=["Aceite_Prod", opt_col] if opt_col in df_ext_hoy.columns else "Aceite_Prod", barmode="group", color_discrete_sequence=['#22c55e', '#94a3b8'])
+                    fig_aceite.update_traces(texttemplate='%{y:,.0f}', textposition='outside')
                     fig_aceite = optimize_bar(fig_aceite, len(df_ext_hoy['Extractora'].unique()))
                     fig_aceite.update_layout(yaxis=dict(tickformat=","), margin=dict(t=10, b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                     show_chart(fig_aceite)
@@ -812,6 +819,7 @@ if check_password():
                     fig_cons_ext = px.bar(df_melted_ext, x="Extractora", y="Kilos", color="Material", 
                                       title="Acumulado Mensual de Biomasa (kg)", 
                                       color_discrete_map={"Hueso": "#78350f", "Orujillo": "#475569", "Poda": "#4d7c0f", "Hoja": "#84cc16"})
+                    fig_cons_ext.update_traces(texttemplate='%{y:,.0f}', textposition='inside')
                     fig_cons_ext = optimize_bar(fig_cons_ext, len(df_melted_ext['Extractora'].unique()))
                     show_chart(fig_cons_ext)
                 else:
