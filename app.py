@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 import os
 from dotenv import load_dotenv
 import urllib.request
+import urllib.parse
 import xml.etree.ElementTree as ET
 import math
 import email.utils
@@ -19,330 +20,8 @@ load_dotenv()
 st.set_page_config(page_title="Dashboard El Tejar", layout="wide", page_icon="🏭")
 
 # ==============================================================================
-# CONFIGURACIÓN DE SEGURIDAD (CONEXIÓN A NEON)
-# ==============================================================================
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# --- ESTILOS PERSONALIZADOS (CSS) - SLATE LIGHT THEME ---
-st.markdown("""
-<style>
-    /* Fondo gris claro para no fatigar la vista */
-    .stApp { background-color: #f1f5f9; }
-    
-    /* 🌟 MODO KIOSKO: Esconder interfaz de Streamlit */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {display:none;}
-    
-    /* Tarjetas de Noticias */
-    .news-card {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 12px;
-        border-left: 4px solid #eab308;
-        margin-bottom: 15px;
-        color: #0f172a;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e2e8f0;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .news-card:hover {
-        transform: translateX(5px);
-        box-shadow: -2px 4px 10px rgba(0,0,0,0.08);
-    }
-    .news-title { font-size: 1.1rem; font-weight: bold; color: #d97706; margin-bottom: 5px; }
-    .news-source { font-size: 0.8rem; color: #64748b; margin-bottom: 10px; }
-    .news-snippet { font-size: 0.9rem; line-height: 1.4; color: #334155; }
-    .read-more { color: #0284c7; text-decoration: none; font-size: 0.85rem; font-weight: bold;}
-    .stDataFrame [data-testid="stTable"] { font-variant-numeric: tabular-nums; }
-    
-    /* Tarjetas KPI Principales */
-    .kpi-card {
-        background-color: #ffffff;
-        padding: 20px 10px 15px 10px;
-        border-radius: 12px;
-        text-align: center;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        border: 1px solid #e2e8f0;
-        border-top: 4px solid #65a30d; 
-        margin-bottom: 20px;
-        color: #0f172a;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .kpi-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
-    }
-    .kpi-card.blue { border-top-color: #3b82f6; }
-    .kpi-card.yellow { border-top-color: #eab308; }
-    .kpi-card.orange { border-top-color: #f97316; }
-    
-    .kpi-icon { font-size: 32px; margin-bottom: 10px; }
-    .kpi-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
-    .kpi-value { color: #0f172a; font-size: 2.2rem; font-weight: 800; line-height: 1.1; }
-    .kpi-unit { font-size: 1rem; color: #94a3b8; font-weight: 500; }
-    
-    .kpi-delta { font-size: 0.95rem; font-weight: 600; margin-top: 12px; padding-top: 10px; border-top: 1px solid #f1f5f9; }
-    .delta-positive { color: #16a34a; } 
-    .delta-negative { color: #dc2626; } 
-    .delta-neutral { color: #64748b; font-weight: 400; } 
-    
-    /* Tarjetas Acumulado Mensual - Estilo Apilado */
-    .monthly-card {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 18px 10px;
-        text-align: center;
-        border-top: 4px solid #94a3b8;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        margin-bottom: 15px;
-        border-left: 1px solid #e2e8f0;
-        border-right: 1px solid #e2e8f0;
-        border-bottom: 1px solid #e2e8f0;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .monthly-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 12px -3px rgba(0,0,0,0.1);
-    }
-    .monthly-card.blue { border-top-color: #3b82f6; }
-    .monthly-card.yellow { border-top-color: #eab308; }
-    .monthly-card.orange { border-top-color: #f97316; }
-    
-    .m-title { color: #64748b; font-size: 0.85rem; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; display: block; }
-    .m-icon { font-size: 20px; margin-bottom: 5px; display: block; }
-    .m-value { color: #0f172a; font-size: 1.8rem; font-weight: 800; line-height: 1.1; }
-    .m-unit { font-size: 0.9rem; color: #94a3b8; font-weight: 500; }
-
-    /* Tarjeta Precio interactiva */
-    .price-card {
-        background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center;
-        transition: transform 0.2s ease;
-    }
-    .price-card:hover {
-        transform: scale(1.02);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- SISTEMA DE DOBLE LOGIN ---
-def check_password():
-    if "login_ok" not in st.session_state:
-        st.session_state["login_ok"] = False
-        st.session_state["role"] = None
-        
-    if not st.session_state["login_ok"]:
-        col1, col2, col3 = st.columns([1,2,1])
-        with col2:
-            try:
-                st.image("logo.png", width=250) 
-            except Exception:
-                st.markdown("<div style='text-align: center; font-size: 4rem;'>🏭</div>", unsafe_allow_html=True)
-                
-            st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
-            
-            with st.form("login_form"):
-                usuario = st.text_input("Usuario")
-                password = st.text_input("Contraseña", type="password")
-                submit = st.form_submit_button("Entrar", use_container_width=True)
-                
-                if submit:
-                    users_env = os.getenv("USUARIOS_AUTORIZADOS", "")
-                    usuarios_validos = {}
-                    if users_env:
-                        for u in users_env.split(","):
-                            partes = u.split(":")
-                            if len(partes) == 3:
-                                user, pwd, role = partes
-                                usuarios_validos[user.strip()] = {"pwd": pwd.strip(), "role": role.strip()}
-                    
-                    if usuario in usuarios_validos and password == usuarios_validos[usuario]["pwd"]:
-                        st.session_state["login_ok"] = True
-                        st.session_state["role"] = usuarios_validos[usuario]["role"]
-                        st.session_state["username"] = usuario
-                        st.rerun()
-                    else:
-                        st.error("Credenciales incorrectas o usuario no autorizado")
-        return False
-    return True
-
-def get_centro_from_planta(planta_name):
-    p_upper = str(planta_name).upper()
-    if "BAENA" in p_upper: return "Baena"
-    if "VETEJAR" in p_upper or "ALGODONALES" in p_upper or "AUTOGENERACI" in p_upper: return "Palenciana"
-    if "TEJAR" in p_upper: return "El Tejar"
-    return planta_name
-
-def load_objectives():
-    if os.path.exists("objetivos_tejar.csv"):
-        df = pd.read_csv("objetivos_tejar.csv")
-        if "Centro" not in df.columns:
-            df["Centro"] = df["Planta"].apply(get_centro_from_planta)
-        return df
-    else:
-        return pd.DataFrame({
-            "Area": ["Centrifugacion", "Centrifugacion", "Centrifugacion", "Secado", "Secado", "Secado", "Secado", "Secado", "Extraccion", "Extraccion", "Electricidad", "Electricidad", "Electricidad", "Electricidad"],
-            "Planta": ["Marchena", "Cabra", "Baena", "Palenciana", "Marchena", "Cabra", "Baena", "Espejo", "El Tejar", "Baena", "Vetejar 12.6 MW", "Baena 25 MW", "Algodonales 5.3 MW", "Autogeneración 5.7 MW"],
-            "Centro": ["Marchena", "Cabra", "Baena", "Palenciana", "Marchena", "Cabra", "Baena", "Espejo", "El Tejar", "Baena", "Palenciana", "Baena", "Palenciana", "Palenciana"],
-            "Metrica": ["Aceite (kg)", "Aceite (kg)", "Aceite (kg)", "OGS (kg)", "OGS (kg)", "OGS (kg)", "OGS (kg)", "OGS (kg)", "Aceite (kg)", "Aceite (kg)", "Energia (kWh)", "Energia (kWh)", "Energia (kWh)", "Energia (kWh)"],
-            "Objetivo_Diario": [5251, 442, 1906, 148900, 272720, 288560, 313160, 181020, 43400, 18900, 190270, 358330, 91400, 60000]
-        })
-
-def save_objectives(df):
-    df.to_csv("objetivos_tejar.csv", index=False)
-
-def apply_objectives(df_cent, df_secado, df_ext, df_elec, df_obj):
-    def merge_obj(df, join_col, area_name, obj_col_name):
-        if df.empty or join_col not in df.columns: return df
-        sub_obj = df_obj[df_obj["Area"] == area_name][["Planta", "Objetivo_Diario"]]
-        sub_obj = sub_obj.rename(columns={"Planta": join_col, "Objetivo_Diario": obj_col_name})
-        if obj_col_name in df.columns: df = df.drop(columns=[obj_col_name])
-        return pd.merge(df, sub_obj, on=join_col, how="left")
-
-    df_cent = merge_obj(df_cent, "Centro", "Centrifugacion", "Optimo")
-    df_secado = merge_obj(df_secado, "Centro", "Secado", "Obj_OGS")
-    df_ext = merge_obj(df_ext, "Extractora", "Extraccion", "Obj_Aceite")
-    df_elec = merge_obj(df_elec, "Planta", "Electricidad", "Optimo_kWh")
-    return df_cent, df_secado, df_ext, df_elec
-
-def format_kpi_number(num):
-    try:
-        val = float(num)
-        if val >= 1_000_000: return f"{val/1_000_000:.2f}M"
-        elif val >= 1_000: return f"{val/1_000:.1f}k"
-        else: return f"{val:,.0f}"
-    except: return "0"
-
-def get_delta_html(real, target):
-    if not target or target == 0 or pd.isna(target):
-        return "<div class='kpi-delta delta-neutral'>Sin objetivo definido</div>"
-    diff = real - target
-    pct = (diff / target) * 100
-    if diff > 0: return f"<div class='kpi-delta delta-positive'>▲ +{format_kpi_number(diff)} (+{pct:.1f}%)</div>"
-    elif diff < 0: return f"<div class='kpi-delta delta-negative'>▼ {format_kpi_number(diff)} ({pct:.1f}%)</div>"
-    else: return "<div class='kpi-delta delta-neutral'>▬ Objetivo exacto</div>"
-
-def get_kpi_card_html(title, icon, val, unit, delta_html, css_class=""):
-    return f"""
-    <div class="kpi-card {css_class}">
-        <div class="kpi-icon">{icon}</div>
-        <div class="kpi-title">{title}</div>
-        <div class="kpi-value">{format_kpi_number(val)}<span class="kpi-unit"> {unit}</span></div>
-        {delta_html}
-    </div>
-    """
-
-def get_monthly_card_html(title, icon, val, unit, css_class=""):
-    return f"""
-    <div class="monthly-card {css_class}">
-        <span class="m-icon">{icon}</span>
-        <span class="m-title">{title}</span>
-        <div class="m-value">{format_kpi_number(val)}<span class="m-unit"> {unit}</span></div>
-    </div>
-    """
-
-@st.cache_data
-def convert_df(df):
-    return df.to_csv(index=False).encode('utf-8')
-
-def display_styled_table(df, area="", download_name="datos.csv"):
-    if df.empty: return
-    df_clean = df.dropna(axis=1, how='all')
-    if area == "Centrifugacion":
-        def highlight(row):
-            styles = [''] * len(row)
-            if 'Acidez' in df_clean.columns:
-                val = row['Acidez']
-                if pd.notnull(val) and isinstance(val, (int, float)) and val > 3:
-                    styles[df_clean.columns.get_loc('Acidez')] = 'background-color: rgba(239, 68, 68, 0.4); color: white;'
-            return styles
-        st.dataframe(df_clean.style.apply(highlight, axis=1).format(thousands=","), hide_index=True, use_container_width=True)
-    else:
-        st.dataframe(df_clean.style.format(thousands=","), hide_index=True, use_container_width=True)
-    csv_data = convert_df(df_clean)
-    st.download_button(label="📥 Descargar CSV", data=csv_data, file_name=download_name, mime='text/csv')
-
-# ==============================================================================
-# MOTOR DE CONEXIÓN
-# ==============================================================================
-@st.cache_data(ttl=60)
-def get_data_from_db(fecha_reporte, dias_historial=0):
-    try:
-        engine = create_engine(DATABASE_URL)
-        fecha_fin_str = fecha_reporte.strftime('%Y-%m-%d')
-        fecha_inicio_str = (fecha_reporte - timedelta(days=dias_historial)).strftime('%Y-%m-%d')
-        
-        query_suffix = f"WHERE fecha >= '{fecha_inicio_str}' AND fecha <= '{fecha_fin_str}'"
-        
-        with engine.connect() as conn:
-            df_aport = pd.read_sql(f"SELECT * FROM aportaciones {query_suffix}", conn)
-            df_ex = pd.read_sql(f"SELECT * FROM existencias {query_suffix}", conn)
-            df_cent = pd.read_sql(f"SELECT * FROM centrifugacion {query_suffix}", conn)
-            df_sec = pd.read_sql(f"SELECT * FROM secado {query_suffix}", conn)
-            df_ext = pd.read_sql(f"SELECT * FROM extraccion {query_suffix}", conn)
-            df_elec = pd.read_sql(f"SELECT * FROM electricidad {query_suffix}", conn)
-            df_cons_sec = pd.read_sql(f"SELECT * FROM consumo_secado {query_suffix}", conn)
-            df_cons_ext = pd.read_sql(f"SELECT * FROM consumo_extraccion {query_suffix}", conn)
-            df_cons_elec = pd.read_sql(f"SELECT * FROM consumo_electricidad {query_suffix}", conn)
-
-        def standarize_dates(df):
-            if not df.empty and 'fecha' in df.columns:
-                df['fecha'] = pd.to_datetime(df['fecha']).dt.strftime('%Y-%m-%d')
-            return df
-
-        dfs = [df_aport, df_ex, df_cent, df_sec, df_ext, df_elec, df_cons_sec, df_cons_ext, df_cons_elec]
-        for df in dfs: standarize_dates(df)
-
-        if not df_aport.empty: df_aport.rename(columns={'planta':'Planta', 'centro':'Centro', 'hoy_kg':'Hoy (kg)', 'acum_mensual':'Acum. Mensual'}, inplace=True)
-        if not df_ex.empty: df_ex.rename(columns={'material':'Material', 'total_kilos':'Total Kilos'}, inplace=True)
-        if not df_cent.empty: df_cent.rename(columns={'centro':'Centro', 'entrada_alperujo':'Entrada_Alperujo', 'aceite_prod':'Aceite_Prod', 'rdto_obtenido':'Rdto_Obtenido', 'acidez':'Acidez', 'acidez_mensual':'Acidez_Mensual', 'acidez_campana':'Acidez_Campana', 'media_mensual':'Media_Mensual', 'rdto_campana':'Rdto_Campana', 'acum_mensual':'Acum. Mensual'}, inplace=True)
-        if not df_sec.empty: df_sec.rename(columns={'centro':'Centro', 'entrada_alperujo':'Entrada_Alperujo', 'entrada_alperujo_mes':'Entrada_Alperujo_Mes', 'ogs_salida':'OGS_Salida', 'acum_mensual':'Acum. Mensual'}, inplace=True)
-        if not df_ext.empty: df_ext.rename(columns={'extractora':'Extractora', 'centro':'Centro', 'ogs_procesado':'OGS_Procesado', 'aceite_prod':'Aceite_Prod', 'acum_mensual':'Acum. Mensual', 'optimo_subifor':'Optimo_Subifor', 'salida_aceite':'Salida_Aceite'}, inplace=True)
-        if not df_elec.empty: df_elec.rename(columns={'planta':'Planta', 'centro':'Centro', 'generada_kwh':'Generada_kWh', 'acum_mensual':'Acum. Mensual'}, inplace=True)
-        if not df_cons_sec.empty: df_cons_sec.rename(columns={'centro':'Centro', 'consumo_hueso':'Consumo_Hueso', 'consumo_orujillo':'Consumo_Orujillo', 'consumo_poda':'Consumo_Poda', 'consumo_hoja':'Consumo_Hoja'}, inplace=True)
-        if not df_cons_ext.empty: df_cons_ext.rename(columns={'extractora':'Extractora', 'centro':'Centro', 'consumo_hueso':'Consumo_Hueso', 'consumo_orujillo':'Consumo_Orujillo', 'consumo_poda':'Consumo_Poda', 'consumo_hoja':'Consumo_Hoja'}, inplace=True)
-        if not df_cons_elec.empty: df_cons_elec.rename(columns={'planta':'Planta', 'centro':'Centro', 'consumo_biomasa':'Consumo_Biomasa', 'consumo_biomasa_mes':'Consumo_Biomasa_Mes'}, inplace=True)
-
-        has_data = not df_aport.empty
-        return has_data, df_aport, df_ex, df_cent, df_sec, df_ext, df_elec, df_cons_sec, df_cons_ext, df_cons_elec
-        
-    except Exception as e:
-        print(f"Error base de datos: {e}")
-        return False, pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-def filter_dataframe(df, column_names, planta_seleccionada):
-    if df.empty or planta_seleccionada == "Todas": return df
-    if isinstance(column_names, str): column_names = [column_names]
-    mask = pd.Series(False, index=df.index)
-    for col in column_names:
-        if col in df.columns:
-            mask = mask | df[col].astype(str).str.contains(planta_seleccionada, case=False, na=False)
-    return df[mask].reset_index(drop=True)
-
-@st.cache_data(ttl=60)
-def get_latest_date_from_db():
-    try:
-        engine = create_engine(DATABASE_URL)
-        with engine.connect() as conn:
-            result = pd.read_sql("SELECT MAX(fecha) as max_fecha FROM aportaciones", conn)
-            max_date = result['max_fecha'].iloc[0]
-            if pd.notnull(max_date):
-                return pd.to_datetime(max_date).date()
-    except Exception as e:
-        print(f"Error obteniendo fecha máxima: {e}")
-    return date.today() - timedelta(days=1)
-
-def show_chart(fig):
-    fig.update_layout(dragmode=False) 
-    st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
-
-def optimize_bar(fig, df_len):
-    if df_len == 1: fig.update_traces(width=0.25, selector=dict(type='bar'))
-    elif df_len == 2: fig.update_traces(width=0.4, selector=dict(type='bar'))
-    return fig
-
 # 🌟 LÓGICA DE SELECTOR LOCAL PARA GRÁFICAS DE TENDENCIA
+# ==============================================================================
 def get_local_selection(df, column_name, key_prefix, title="🔍 Analizar Planta Específica:"):
     if planta_activa != "Todas":
         return df[column_name].iloc[0] if not df.empty else "Total"
@@ -360,7 +39,9 @@ def get_local_selection(df, column_name, key_prefix, title="🔍 Analizar Planta
 @st.cache_data(ttl=3600)
 def fetch_live_news():
     try:
-        url = "https://news.google.com/rss/search?q=aceite+de+orujo+oliva+sector+ORIVA&hl=es&gl=ES&ceid=ES:es"
+        # 🌟 Búsqueda ampliada con operadores OR para rastrear el sector y a la propia cooperativa
+        query = urllib.parse.quote("aceite de orujo OR alperujo OR biomasa olivar OR oriva OR \"oleicola el tejar\"")
+        url = f"https://news.google.com/rss/search?q={query}&hl=es&gl=ES&ceid=ES:es"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             xml_data = response.read()
@@ -395,21 +76,21 @@ def fetch_live_news():
 
 def get_market_price():
     try:
-        # PLAN A: Robot Scraper a Oleista (Silencioso)
-        url = "https://oleista.com/"
+        # PLAN A: Robot Scraper a OLIMERCA (Silencioso)
+        url = "https://www.olimerca.com/precios"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=3) as response:
-            html = response.read().decode('utf-8')
+            html = response.read().decode('utf-8', errors='ignore')
         
-        # Buscar el precio del Orujo Crudo en su código HTML
-        match = re.search(r'Orujo Crudo.*?(\d+,\d{2})', html, re.IGNORECASE | re.DOTALL)
+        # Buscar el precio del Orujo Crudo en la tabla de Olimerca
+        match = re.search(r'(?:Orujo crudo|Crudo de orujo|Aceite de orujo crudo)[^\d]*?(\d+[,.]\d{2})', html, re.IGNORECASE | re.DOTALL)
         if match:
             price_str = match.group(1).replace(',', '.')
-            return float(price_str), 0.0, True # True indica que es precio real
+            return float(price_str), 0.0, "Olimerca (Tiempo Real)"
     except:
         pass
         
-    # PLAN B: Simulador algorítmico (Si Oleista se cae o cambia el diseño)
+    # PLAN B: Simulador algorítmico (Si Olimerca se cae o cambia su web)
     base_price = 1.24 
     day_of_year = date.today().timetuple().tm_yday
     fluctuation_today = math.sin(day_of_year / 7.0) * 0.04 
@@ -418,7 +99,7 @@ def get_market_price():
     price_today = base_price + fluctuation_today
     price_yesterday = base_price + fluctuation_yesterday
     delta = price_today - price_yesterday
-    return price_today, delta, False
+    return price_today, delta, "Monitor Algorítmico (Estimado)"
 
 # --- APLICACIÓN PRINCIPAL ---
 if check_password():
@@ -577,16 +258,15 @@ if check_password():
                 with col_noticias:
                     st.subheader("📈 Mercado: Aceite de Orujo")
                     
-                    price_today, delta, is_real = get_market_price()
+                    price_today, delta, fuente = get_market_price()
                     color_delta = "#16a34a" if delta >= 0 else "#dc2626"
                     arrow = "▲ +" if delta >= 0 else "▼ "
-                    fuente_texto = "* Fuente: Oleista (En tiempo real)" if is_real else "* Monitor de mercado (estimado)"
                     
                     st.markdown(f"""
                     <div class="price-card">
                         <div style="font-size: 0.85rem; color: #64748b; font-weight: bold; text-transform: uppercase;">Precio Medio (Crudo)</div>
                         <div style="font-size: 2rem; font-weight: 800; color: #0f172a;">{price_today:.2f} <span style="font-size: 1rem; color: #94a3b8;">€/kg</span> <span style="font-size: 1rem; color: {color_delta};">{arrow}{delta:.2f}</span></div>
-                        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">{fuente_texto}</div>
+                        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">* Fuente: {fuente}</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
