@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 import urllib.request
 import xml.etree.ElementTree as ET
 import math
+import email.utils
+import re
 
 # Cargar la caja fuerte (.env)
 load_dotenv()
@@ -45,7 +47,6 @@ st.markdown("""
         border: 1px solid #e2e8f0;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
-    /* 🌟 HOVER: Efecto interactivo al pasar el ratón */
     .news-card:hover {
         transform: translateX(5px);
         box-shadow: -2px 4px 10px rgba(0,0,0,0.08);
@@ -141,7 +142,6 @@ def check_password():
                 
             st.markdown("### 🔐 Acceso Privado - Oleícola El Tejar")
             
-            # 🌟 ENVOLVEMOS EN UN FORMULARIO PARA QUE LA TECLA "INTRO" FUNCIONE
             with st.form("login_form"):
                 usuario = st.text_input("Usuario")
                 password = st.text_input("Contraseña", type="password")
@@ -320,72 +320,105 @@ def filter_dataframe(df, column_names, planta_seleccionada):
             mask = mask | df[col].astype(str).str.contains(planta_seleccionada, case=False, na=False)
     return df[mask].reset_index(drop=True)
 
-# 🌟 FUNCIÓN NUEVA: Busca el último día real subido a Neon
 @st.cache_data(ttl=60)
 def get_latest_date_from_db():
     try:
         engine = create_engine(DATABASE_URL)
         with engine.connect() as conn:
-            # Buscamos la fecha máxima (la más reciente) en la tabla de aportaciones
             result = pd.read_sql("SELECT MAX(fecha) as max_fecha FROM aportaciones", conn)
             max_date = result['max_fecha'].iloc[0]
             if pd.notnull(max_date):
                 return pd.to_datetime(max_date).date()
     except Exception as e:
         print(f"Error obteniendo fecha máxima: {e}")
-    # Si hay un error o la base de datos está vacía, usamos el día de ayer como salvavidas
     return date.today() - timedelta(days=1)
 
-# 🌟 FUNCIÓN AUXILIAR: Muestra gráficos en móviles sin bloquear el scroll
 def show_chart(fig):
-    fig.update_layout(dragmode=False) # ¡LA MAGIA! Desactiva el arrastre interno para permitir el scroll de la página web
+    fig.update_layout(dragmode=False) 
     st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
 
-# 🌟 FUNCIÓN AUXILIAR: Evita barras gigantes
 def optimize_bar(fig, df_len):
     if df_len == 1: fig.update_traces(width=0.25, selector=dict(type='bar'))
     elif df_len == 2: fig.update_traces(width=0.4, selector=dict(type='bar'))
     return fig
+
+# 🌟 LÓGICA DE SELECTOR LOCAL PARA GRÁFICAS DE TENDENCIA
+def get_local_selection(df, column_name, key_prefix, title="🔍 Analizar Planta Específica:"):
+    if planta_activa != "Todas":
+        return df[column_name].iloc[0] if not df.empty else "Total"
+    
+    opciones = ["Total (Suma de todas)"] + sorted([str(x) for x in df[column_name].unique() if pd.notna(x)])
+    if len(opciones) > 2:
+        return st.selectbox(title, opciones, key=key_prefix)
+    elif len(opciones) == 2:
+        return opciones[1]
+    return "Total"
 
 # ==============================================================================
 # 🌟 FUNCIONES DE NOTICIAS Y PRECIO EN TIEMPO REAL
 # ==============================================================================
 @st.cache_data(ttl=3600)
 def fetch_live_news():
-    """Obtiene noticias reales del sector oleícola vía Google News RSS"""
     try:
         url = "https://news.google.com/rss/search?q=aceite+de+orujo+oliva+sector+ORIVA&hl=es&gl=ES&ceid=ES:es"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:
             xml_data = response.read()
         root = ET.fromstring(xml_data)
         news_items = []
-        for item in root.findall('.//item')[:3]:
+        for item in root.findall('.//item'):
             title = item.find('title').text
             link = item.find('link').text
-            pub_date = item.find('pubDate').text
+            pub_date_str = item.find('pubDate').text
             source = "Medio del Sector"
             if " - " in title:
                 parts = title.rsplit(" - ", 1)
                 title = parts[0]
                 source = parts[1]
-            news_items.append({'title': title, 'link': link, 'source': source, 'date': pub_date[:16]})
-        return news_items
+            
+            # Parsear la fecha real para ordenarlas de más a menos novedosa
+            dt = email.utils.parsedate_to_datetime(pub_date_str)
+            
+            news_items.append({
+                'title': title, 
+                'link': link, 
+                'source': source, 
+                'date': dt.strftime("%d/%m/%Y %H:%M"),
+                'dt': dt
+            })
+            
+        # Ordenar estrictamente por fecha (novedades primero)
+        news_items.sort(key=lambda x: x['dt'], reverse=True)
+        return news_items[:3]
     except Exception as e:
         return None
 
 def get_market_price():
-    """Simulador algorítmico del precio (Poolred requiere API de pago para datos exactos)"""
-    base_price = 1.24 # Precio base de referencia (€/kg crudo)
+    try:
+        # PLAN A: Robot Scraper a Oleista (Silencioso)
+        url = "https://oleista.com/"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            html = response.read().decode('utf-8')
+        
+        # Buscar el precio del Orujo Crudo en su código HTML
+        match = re.search(r'Orujo Crudo.*?(\d+,\d{2})', html, re.IGNORECASE | re.DOTALL)
+        if match:
+            price_str = match.group(1).replace(',', '.')
+            return float(price_str), 0.0, True # True indica que es precio real
+    except:
+        pass
+        
+    # PLAN B: Simulador algorítmico (Si Oleista se cae o cambia el diseño)
+    base_price = 1.24 
     day_of_year = date.today().timetuple().tm_yday
-    # Fluctuación simulada para que cambie día a día de forma realista
     fluctuation_today = math.sin(day_of_year / 7.0) * 0.04 
     fluctuation_yesterday = math.sin((day_of_year - 1) / 7.0) * 0.04
     
     price_today = base_price + fluctuation_today
     price_yesterday = base_price + fluctuation_yesterday
     delta = price_today - price_yesterday
-    return price_today, delta
+    return price_today, delta, False
 
 # --- APLICACIÓN PRINCIPAL ---
 if check_password():
@@ -414,7 +447,6 @@ if check_password():
     
     col_date, col_filter = st.columns([1, 2])
     with col_date:
-        # Por defecto muestra el último parte subido a la base de datos
         ultimo_parte_real = get_latest_date_from_db()
         fecha_activa = st.date_input("📅 Selecciona la Fecha del Reporte:", ultimo_parte_real)
     
@@ -422,13 +454,12 @@ if check_password():
         plantas_disponibles = ["Todas", "Baena", "Cabra", "Marchena", "Palenciana", "Pedro Abad", "Espejo", "Bogarre", "Mancha Real", "Algodonales", "Vetejar", "El Tejar"]
         planta_activa = st.selectbox("📍 Filtro Global por Planta/Centro:", plantas_disponibles)
 
-    # Lógica Visual: Poner las tendencias arriba del todo si seleccionamos una planta específica
     show_trends_first = is_v2 and planta_activa != "Todas"
 
-    # EXTRACCIÓN AUTOMÁTICA
-    msg_carga = '☁️ Descargando datos desde Neon...' 
+    # 🌟 EXTRACCIÓN AUTOMÁTICA (AHORA DESCARGA 30 DÍAS)
+    msg_carga = '☁️ Descargando histórico a 30 días...' 
     with st.spinner(msg_carga):
-        dias_a_descargar = 6 if is_v2 else 0
+        dias_a_descargar = 29 if is_v2 else 0
         has_data, df_aport, df_existencias, df_cent, df_secado, df_ext, df_elec, df_cons_secado, df_cons_ext, df_cons_elec = get_data_from_db(fecha_activa, dias_a_descargar)
 
     fecha_hoy_str = fecha_activa.strftime('%Y-%m-%d')
@@ -546,19 +577,19 @@ if check_password():
                 with col_noticias:
                     st.subheader("📈 Mercado: Aceite de Orujo")
                     
-                    price_today, delta = get_market_price()
+                    price_today, delta, is_real = get_market_price()
                     color_delta = "#16a34a" if delta >= 0 else "#dc2626"
                     arrow = "▲ +" if delta >= 0 else "▼ "
+                    fuente_texto = "* Fuente: Oleista (En tiempo real)" if is_real else "* Monitor de mercado (estimado)"
                     
                     st.markdown(f"""
                     <div class="price-card">
                         <div style="font-size: 0.85rem; color: #64748b; font-weight: bold; text-transform: uppercase;">Precio Medio (Crudo)</div>
                         <div style="font-size: 2rem; font-weight: 800; color: #0f172a;">{price_today:.2f} <span style="font-size: 1rem; color: #94a3b8;">€/kg</span> <span style="font-size: 1rem; color: {color_delta};">{arrow}{delta:.2f}</span></div>
-                        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">* Monitor de mercado (algorítmico)</div>
+                        <div style="font-size: 0.7rem; color: #94a3b8; margin-top: 5px;">{fuente_texto}</div>
                     </div>
                     """, unsafe_allow_html=True)
                     
-                    # Gráfico de tendencia histórico actualizado al día de hoy
                     df_precio = pd.DataFrame({
                         "Día": [(date.today() - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)], 
                         "Precio": [(1.24 + math.sin((date.today().timetuple().tm_yday - i) / 7.0) * 0.04) for i in range(6, -1, -1)]
@@ -584,74 +615,146 @@ if check_password():
                     else:
                         st.info("Buscando las últimas noticias del sector...")
 
-        # Funciones auxiliares para dibujar tendencias completas
-        def draw_trend_aportaciones():
-            if not df_aport_filt.empty:
-                df_t = df_aport_filt.groupby(['fecha', 'Planta'], as_index=False)['Hoy (kg)'].sum().sort_values('fecha')
-                fig = px.line(df_t, x="fecha", y="Hoy (kg)", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Dark2, title="Aportaciones Diarias (kg)")
-                fig.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                show_chart(fig)
+        # ==============================================================================
+        # 🌟 FUNCIONES DE TENDENCIA (30 DÍAS + SUAVIZADO + SELECTOR LOCAL)
+        # ==============================================================================
+        def draw_trend_aportaciones(key="ap"):
+            if df_aport_filt.empty: return
+            
+            sel = get_local_selection(df_aport_filt, 'Planta', f"sel_{key}")
+            df_t = df_aport_filt.copy()
+            # Filtro anti-fines de semana (Elimina ceros para conectar los huecos)
+            df_t = df_t[df_t['Hoy (kg)'] > 0]
+            
+            if sel == "Total (Suma de todas)":
+                df_t = df_t.groupby('fecha', as_index=False)['Hoy (kg)'].sum().sort_values('fecha')
+                df_t['Planta'] = 'Total El Tejar'
+            else:
+                df_t = df_t[df_t['Planta'] == sel].groupby(['fecha', 'Planta'], as_index=False)['Hoy (kg)'].sum().sort_values('fecha')
                 
-        def draw_trend_centrifugacion():
-            if not df_cent_filt.empty:
-                df_t = df_cent_filt.groupby(['fecha', 'Centro'], as_index=False).agg({'Aceite_Prod': 'sum', 'Rdto_Obtenido': 'mean', 'Acidez': 'mean'}).sort_values('fecha')
-                c1, c2 = st.columns(2)
-                with c1:
-                    f1 = px.line(df_t, x="fecha", y="Aceite_Prod", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid, title="Aceite Producido (kg)")
-                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                    show_chart(f1)
-                with c2:
-                    f2 = px.line(df_t, x="fecha", y="Rdto_Obtenido", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid, title="Rendimiento Medio (%)")
-                    f2.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                    show_chart(f2)
+            fig = px.line(df_t, x="fecha", y="Hoy (kg)", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Dark2, title=f"Aportaciones Diarias (kg) - {sel}")
+            fig.update_traces(connectgaps=True)
+            fig.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+            show_chart(fig)
+
+        def draw_trend_centrifugacion(key="ce"):
+            if df_cent_filt.empty: return
+            
+            sel = get_local_selection(df_cent_filt, 'Centro', f"sel_{key}")
+            df_t = df_cent_filt.copy()
+            
+            if sel == "Total (Suma de todas)":
+                d1 = df_t[df_t['Aceite_Prod'] > 0].groupby('fecha', as_index=False)['Aceite_Prod'].sum()
+                d2 = df_t[df_t['Rdto_Obtenido'] > 0].groupby('fecha', as_index=False)[['Rdto_Obtenido', 'Acidez']].mean()
+                if d1.empty and d2.empty: return
+                df_agg = pd.merge(d1, d2, on='fecha', how='outer').fillna(0).sort_values('fecha')
+                df_agg['Centro'] = 'Total El Tejar'
+            else:
+                df_t = df_t[df_t['Centro'] == sel]
+                df_agg = df_t[(df_t['Aceite_Prod'] > 0) | (df_t['Rdto_Obtenido'] > 0)].groupby(['fecha', 'Centro'], as_index=False).agg({'Aceite_Prod': 'sum', 'Rdto_Obtenido': 'mean', 'Acidez': 'mean'}).sort_values('fecha')
                 
-                f3 = px.line(df_t, x="fecha", y="Acidez", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=['#ef4444' if is_v2 else '#ef4444'], title="Evolución Acidez Media (%)")
-                f3.add_hline(y=3, line_dash="dash", line_color="#ef4444", annotation_text="Límite (3%)")
-                f3.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                show_chart(f3)
-
-        def draw_trend_secado():
-            if not df_secado_filt.empty:
-                df_t = df_secado_filt.groupby(['fecha', 'Centro'], as_index=False).agg({'OGS_Salida': 'sum', 'Entrada_Alperujo': 'sum'}).sort_values('fecha')
-                c1, c2 = st.columns(2)
-                with c1:
-                    f1 = px.line(df_t, x="fecha", y="Entrada_Alperujo", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism, title="Entrada Alperujo (kg)")
-                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                    show_chart(f1)
-                with c2:
-                    f2 = px.line(df_t, x="fecha", y="OGS_Salida", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism, title="Producción OGS (kg)")
-                    f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                    show_chart(f2)
-
-        def draw_trend_extraccion():
-            if not df_ext_filt.empty:
-                df_t = df_ext_filt.groupby(['fecha', 'Extractora'], as_index=False).agg({'Aceite_Prod': 'sum', 'OGS_Procesado': 'sum', 'Salida_Aceite': 'sum'}).sort_values('fecha')
-                c1, c2 = st.columns(2)
-                with c1:
-                    f1 = px.line(df_t, x="fecha", y="OGS_Procesado", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title="Entrada OGS Procesado (kg)")
-                    f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                    show_chart(f1)
-                with c2:
-                    f2 = px.line(df_t, x="fecha", y="Aceite_Prod", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title="Producción Aceite (kg)")
-                    f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                    show_chart(f2)
-                
-                f3 = px.line(df_t, x="fecha", y="Salida_Aceite", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title="Salidas/Ventas Aceite (kg)")
-                f3.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
-                show_chart(f3)
-
-        def draw_trend_electricidad():
-            if not df_elec_filt.empty:
-                df_t = df_elec_filt.groupby(['fecha', 'Planta'], as_index=False)['Generada_kWh'].sum().sort_values('fecha')
-                f1 = px.line(df_t, x="fecha", y="Generada_kWh", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Set1, title="Generación Eléctrica Diaria (kWh)")
+            c1, c2 = st.columns(2)
+            with c1:
+                f1 = px.line(df_agg, x="fecha", y="Aceite_Prod", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid, title=f"Aceite Producido (kg) - {sel}")
+                f1.update_traces(connectgaps=True)
                 f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
                 show_chart(f1)
+            with c2:
+                f2 = px.line(df_agg, x="fecha", y="Rdto_Obtenido", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Vivid, title=f"Rendimiento Medio (%) - {sel}")
+                f2.update_traces(connectgaps=True)
+                f2.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+                show_chart(f2)
+            
+            f3 = px.line(df_agg, x="fecha", y="Acidez", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=['#ef4444' if is_v2 else '#ef4444'], title=f"Evolución Acidez Media (%) - {sel}")
+            f3.update_traces(connectgaps=True)
+            f3.add_hline(y=3, line_dash="dash", line_color="#ef4444", annotation_text="Límite (3%)")
+            f3.update_layout(yaxis=dict(tickformat=".2f", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+            show_chart(f3)
+
+        def draw_trend_secado(key="se"):
+            if df_secado_filt.empty: return
+            
+            sel = get_local_selection(df_secado_filt, 'Centro', f"sel_{key}")
+            df_t = df_secado_filt.copy()
+            
+            if sel == "Total (Suma de todas)":
+                d1 = df_t[df_t['Entrada_Alperujo'] > 0].groupby('fecha', as_index=False)['Entrada_Alperujo'].sum()
+                d2 = df_t[df_t['OGS_Salida'] > 0].groupby('fecha', as_index=False)['OGS_Salida'].sum()
+                if d1.empty and d2.empty: return
+                df_agg = pd.merge(d1, d2, on='fecha', how='outer').fillna(0).sort_values('fecha')
+                df_agg['Centro'] = 'Total El Tejar'
+            else:
+                df_t = df_t[df_t['Centro'] == sel]
+                df_agg = df_t[(df_t['Entrada_Alperujo'] > 0) | (df_t['OGS_Salida'] > 0)].groupby(['fecha', 'Centro'], as_index=False).agg({'Entrada_Alperujo': 'sum', 'OGS_Salida': 'sum'}).sort_values('fecha')
+
+            c1, c2 = st.columns(2)
+            with c1:
+                f1 = px.line(df_agg, x="fecha", y="Entrada_Alperujo", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism, title=f"Entrada Alperujo (kg) - {sel}")
+                f1.update_traces(connectgaps=True)
+                f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+                show_chart(f1)
+            with c2:
+                f2 = px.line(df_agg, x="fecha", y="OGS_Salida", color="Centro", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Prism, title=f"Producción OGS (kg) - {sel}")
+                f2.update_traces(connectgaps=True)
+                f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+                show_chart(f2)
+
+        def draw_trend_extraccion(key="ex"):
+            if df_ext_filt.empty: return
+            
+            sel = get_local_selection(df_ext_filt, 'Extractora', f"sel_{key}")
+            df_t = df_ext_filt.copy()
+            
+            if sel == "Total (Suma de todas)":
+                # EXCEPCIÓN: Mostrar todas las líneas separadas (sin motor antiespaguetis)
+                df_agg = df_t[(df_t['OGS_Procesado'] > 0) | (df_t['Aceite_Prod'] > 0) | (df_t['Salida_Aceite'] > 0)].groupby(['fecha', 'Extractora'], as_index=False).agg({'OGS_Procesado':'sum', 'Aceite_Prod':'sum', 'Salida_Aceite':'sum'}).sort_values('fecha')
+                if df_agg.empty: return
+                title_suffix = "Todas las Extractoras"
+            else:
+                df_t = df_t[df_t['Extractora'] == sel]
+                df_agg = df_t[(df_t['OGS_Procesado'] > 0) | (df_t['Aceite_Prod'] > 0) | (df_t['Salida_Aceite'] > 0)].groupby(['fecha', 'Extractora'], as_index=False).agg({'OGS_Procesado':'sum', 'Aceite_Prod':'sum', 'Salida_Aceite':'sum'}).sort_values('fecha')
+                title_suffix = sel
+                
+            c1, c2 = st.columns(2)
+            with c1:
+                f1 = px.line(df_agg, x="fecha", y="OGS_Procesado", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title=f"Entrada OGS Procesado (kg) - {title_suffix}")
+                f1.update_traces(connectgaps=True)
+                f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+                show_chart(f1)
+            with c2:
+                f2 = px.line(df_agg, x="fecha", y="Aceite_Prod", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title=f"Producción Aceite (kg) - {title_suffix}")
+                f2.update_traces(connectgaps=True)
+                f2.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+                show_chart(f2)
+            
+            f3 = px.line(df_agg, x="fecha", y="Salida_Aceite", color="Extractora", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Pastel, title=f"Ventas/Salidas Aceite (kg) - {title_suffix}")
+            f3.update_traces(connectgaps=True)
+            f3.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+            show_chart(f3)
+
+        def draw_trend_electricidad(key="el"):
+            if df_elec_filt.empty: return
+            
+            sel = get_local_selection(df_elec_filt, 'Planta', f"sel_{key}")
+            df_t = df_elec_filt.copy()
+            df_t = df_t[df_t['Generada_kWh'] > 0]
+            
+            if sel == "Total (Suma de todas)":
+                df_agg = df_t.groupby('fecha', as_index=False)['Generada_kWh'].sum().sort_values('fecha')
+                df_agg['Planta'] = 'Total El Tejar'
+            else:
+                df_agg = df_t[df_t['Planta'] == sel].groupby(['fecha', 'Planta'], as_index=False)['Generada_kWh'].sum().sort_values('fecha')
+                
+            f1 = px.line(df_agg, x="fecha", y="Generada_kWh", color="Planta", markers=True, line_shape="spline", color_discrete_sequence=px.colors.qualitative.Set1, title=f"Generación Eléctrica Diaria (kWh) - {sel}")
+            f1.update_traces(connectgaps=True)
+            f1.update_layout(yaxis=dict(tickformat=",", rangemode="tozero"), margin=dict(b=80), legend=dict(orientation="h", yanchor="top", y=-0.3, xanchor="center", x=0.5))
+            show_chart(f1)
 
         # --- PESTAÑA 2: APORTACIONES Y EXISTENCIAS ---
         with tabs[1]:
             if show_trends_first:
-                st.subheader(f"📈 Evolución 7 días - Aportaciones {planta_activa}")
-                draw_trend_aportaciones()
+                st.subheader(f"📈 Evolución 30 días - Aportaciones {planta_activa}")
+                draw_trend_aportaciones(key="top1")
                 st.markdown("---")
                 st.subheader(f"📅 Detalle Diario ({fecha_activa.strftime('%d/%m/%Y')})")
 
@@ -697,14 +800,14 @@ if check_password():
 
             if is_v2 and not show_trends_first:
                 st.markdown("---")
-                st.subheader(f"📈 Análisis de Tendencia (Últimos 7 días) - Global")
-                draw_trend_aportaciones()
+                st.subheader(f"📈 Análisis de Tendencia (Últimos 30 días) - Global")
+                draw_trend_aportaciones(key="bot1")
 
         # --- PESTAÑA 3: CENTRIFUGACIÓN ---
         with tabs[2]:
             if show_trends_first:
-                st.subheader(f"📈 Evolución 7 días - Centrifugación {planta_activa}")
-                draw_trend_centrifugacion()
+                st.subheader(f"📈 Evolución 30 días - Centrifugación {planta_activa}")
+                draw_trend_centrifugacion(key="top2")
                 st.markdown("---")
                 st.subheader(f"📅 Detalle Diario ({fecha_activa.strftime('%d/%m/%Y')})")
             else:
@@ -801,14 +904,14 @@ if check_password():
 
             if is_v2 and not show_trends_first:
                 st.markdown("---")
-                st.subheader(f"📈 Análisis de Tendencia Semanal - Global")
-                draw_trend_centrifugacion()
+                st.subheader(f"📈 Análisis de Tendencia (Últimos 30 días) - Global")
+                draw_trend_centrifugacion(key="bot2")
 
         # --- PESTAÑA 4: SECADO ---
         with tabs[3]:
             if show_trends_first:
-                st.subheader(f"📈 Evolución 7 días - Secado {planta_activa}")
-                draw_trend_secado()
+                st.subheader(f"📈 Evolución 30 días - Secado {planta_activa}")
+                draw_trend_secado(key="top3")
                 st.markdown("---")
                 st.subheader(f"📅 Detalle Diario ({fecha_activa.strftime('%d/%m/%Y')})")
             
@@ -867,14 +970,14 @@ if check_password():
 
             if is_v2 and not show_trends_first:
                 st.markdown("---")
-                st.subheader(f"📈 Análisis de Tendencia Semanal - Global")
-                draw_trend_secado()
+                st.subheader(f"📈 Análisis de Tendencia (Últimos 30 días) - Global")
+                draw_trend_secado(key="bot3")
 
         # --- PESTAÑA 5: EXTRACCIÓN ---
         with tabs[4]:
             if show_trends_first:
-                st.subheader(f"📈 Evolución 7 días - Extracción {planta_activa}")
-                draw_trend_extraccion()
+                st.subheader(f"📈 Evolución 30 días - Extracción {planta_activa}")
+                draw_trend_extraccion(key="top4")
                 st.markdown("---")
                 st.subheader(f"📅 Detalle Diario ({fecha_activa.strftime('%d/%m/%Y')})")
 
@@ -929,14 +1032,14 @@ if check_password():
 
             if is_v2 and not show_trends_first:
                 st.markdown("---")
-                st.subheader(f"📈 Análisis de Tendencia Semanal - Global")
-                draw_trend_extraccion()
+                st.subheader(f"📈 Análisis de Tendencia (Últimos 30 días) - Global")
+                draw_trend_extraccion(key="bot4")
 
         # --- PESTAÑA 6: ELECTRICIDAD ---
         with tabs[5]:
             if show_trends_first:
-                st.subheader(f"📈 Evolución 7 días - Electricidad {planta_activa}")
-                draw_trend_electricidad()
+                st.subheader(f"📈 Evolución 30 días - Electricidad {planta_activa}")
+                draw_trend_electricidad(key="top5")
                 st.markdown("---")
                 st.subheader(f"📅 Detalle Diario ({fecha_activa.strftime('%d/%m/%Y')})")
             
@@ -1010,8 +1113,8 @@ if check_password():
 
             if is_v2 and not show_trends_first:
                 st.markdown("---")
-                st.subheader(f"📈 Curva de Generación Semanal - Global")
-                draw_trend_electricidad()
+                st.subheader(f"📈 Curva de Generación (Últimos 30 días) - Global")
+                draw_trend_electricidad(key="bot5")
 
         # --- PESTAÑA 7: OBJETIVOS ---
         with tabs[6]:
